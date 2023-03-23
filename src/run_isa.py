@@ -6,14 +6,14 @@ import pickle
 import os
 import sys
 
-from gym_subgoal_automata.envs.base.base_env import BaseEnv
+from gym_subgoal_automata_multiagent.envs.base.base_env import BaseEnv
 from reinforcement_learning.isa_base_algorithm import ISAAlgorithmBase
 from reinforcement_learning.isa_qrm_algorithm import ISAAlgorithmQRM
 from reinforcement_learning.isa_hrl_algorithm import ISAAlgorithmHRL
 from reinforcement_learning.tabular_qlearning import TabularQLearning
 from utils import utils
 
-ENV_SUBGOAL_AUTOMATA_PREFIX = "gym_subgoal_automata:"
+ENV_SUBGOAL_AUTOMATA_PREFIX = "gym_subgoal_automata_multiagent:"
 
 
 def get_environment_classes(environment_names):
@@ -127,8 +127,12 @@ def get_argparser():
     return parser
 
 
-def get_target_automata(environment_classes):
-    return [gym.make(ENV_SUBGOAL_AUTOMATA_PREFIX + env_class, params={**env_params, "generation": "random"}).get_automaton()
+def get_target_automata(environment_classes, config):
+    # print(environment_classes)
+    # for env_class, env_params in environment_classes:
+    #     print(env_class,env_params)
+    num_agents = get_param(config,"num_agents")
+    return [[gym.make(ENV_SUBGOAL_AUTOMATA_PREFIX + env_class, params={**env_params, "generation": "random", **config}).get_automaton() for i in range(num_agents)]
             for env_class, env_params in environment_classes]
 
 
@@ -139,12 +143,14 @@ def get_random_tasks(environment_classes, config):
     num_tasks = get_param(config, "num_tasks")
 
     for env_class, env_params in environment_classes:
+        # print(env_params)
         domain_tasks = []
         for task_id in range(num_tasks):
             seed = task_id + get_param(config, "starting_environment_seed") if use_seed else None
             task_params = {**env_params, "generation": "random", BaseEnv.RANDOM_SEED_FIELD: seed, **config}
             domain_tasks.append(gym.make(ENV_SUBGOAL_AUTOMATA_PREFIX + env_class, params=task_params))
         tasks.append(domain_tasks)
+    # print(task_params)
     return tasks
 
 
@@ -186,6 +192,8 @@ def get_predefined_tasks(environment_classes, config):
 
 def get_algorithm(algorithm_name, config):
     environment_classes = get_environment_classes(get_param(config, "environments"))
+    # num_agents = get_param(config,"num_agents")
+    # print(config)
 
     task_generation_method = get_param(config, "task_generation_method")
     if task_generation_method == "random":
@@ -199,8 +207,8 @@ def get_algorithm(algorithm_name, config):
     args.extend([get_param(config, "folder_names"), config])
 
     if algorithm_name == "qrm" or algorithm_name == "hrl":
-        args.extend([get_target_automata(environment_classes),
-                     os.path.join(os.path.dirname(sys.argv[0]), "bin")])
+        args.extend([get_target_automata(environment_classes, config), os.path.join(os.path.dirname(sys.argv[0]), "bin")])
+        # print(args)
         algorithm_class = ISAAlgorithmQRM if algorithm_name == "qrm" else ISAAlgorithmHRL
     elif algorithm_name == "qlearning":
         algorithm_class = TabularQLearning
@@ -243,8 +251,7 @@ if __name__ == "__main__":
 
     loaded_checkpoint = False
 
-    if get_param(config, ISAAlgorithmBase.CHECKPOINT_ENABLE) \
-            and checkpoints_exist(get_param(config, ISAAlgorithmBase.CHECKPOINT_FOLDER)):
+    if get_param(config, ISAAlgorithmBase.CHECKPOINT_ENABLE) and checkpoints_exist(get_param(config, ISAAlgorithmBase.CHECKPOINT_FOLDER)):
         isa_algorithm = load_last_checkpoint(get_param(config, ISAAlgorithmBase.CHECKPOINT_FOLDER))
         loaded_checkpoint = True
     else:

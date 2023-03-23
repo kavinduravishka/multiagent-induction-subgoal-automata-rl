@@ -2,12 +2,13 @@ from abc import abstractmethod
 import numpy as np
 import os
 
-from gym_subgoal_automata.utils.subgoal_automaton import SubgoalAutomaton
+from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
 from reinforcement_learning.learning_algorithm import LearningAlgorithm
 from utils import utils
 from ilasp.generator.ilasp_task_generator import generate_ilasp_task
 from ilasp.parser import ilasp_solution_parser
 from ilasp.solver.ilasp_solver import solve_ilasp_task
+
 
 
 class ISAAlgorithmBase(LearningAlgorithm):
@@ -58,7 +59,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
     AUTOMATON_PLOT_FOLDER = "automaton_plots"          # folder where the graphical solutions to automaton learning tasks are saved
     AUTOMATON_PLOT_FILENAME = "plot-%d.png"            # filename pattern of the graphical solutions to automaton learning tasks
 
-    AUTOMATON_LEARNING_EPISODES_FILENAME = "automaton_learning_episodes.txt"  # filename of the file containing the episodes where an automaton has been learned
+    AUTOMATON_LEARNING_EPISODES_FILENAME = "automaton_learning_episodes-agent_%d.txt"  # filename of the file containing the episodes where an automaton has been learned
 
     def __init__(self, tasks, num_tasks, export_folder_names, params, target_automata, binary_folder_name):
         super().__init__(tasks, num_tasks, export_folder_names, params)
@@ -72,7 +73,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.ilasp_version = utils.get_param(params, ISAAlgorithmBase.ILASP_VERSION_FIELD, "2")
         self.ilasp_compute_minimal = utils.get_param(params, ISAAlgorithmBase.ILASP_COMPUTE_MINIMAL, False)
         self.num_starting_states = utils.get_param(params, ISAAlgorithmBase.STARTING_NUM_STATES_FIELD, 3)
-        self.num_automaton_states = self.num_starting_states * np.ones(self.num_domains, dtype=np.int)
+        self.num_automaton_states = self.num_starting_states * np.ones((self.num_domains,self.num_agents), dtype=np.int)
         self.use_restricted_observables = utils.get_param(params, ISAAlgorithmBase.USE_RESTRICTED_OBSERVABLES, False)
         self.max_disjunction_size = utils.get_param(params, ISAAlgorithmBase.MAX_DISJUNCTION_SIZE, 1)
         self.max_body_literals = utils.get_param(params, ISAAlgorithmBase.MAX_BODY_LITERALS, 1)
@@ -81,7 +82,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.avoid_learning_only_negative = utils.get_param(params, ISAAlgorithmBase.AVOID_LEARNING_ONLY_NEGATIVE, False)
         self.prioritize_optimal_solutions = utils.get_param(params, ISAAlgorithmBase.PRIORITIZE_OPTIMAL_SOLUTIONS, False)
         self.wait_for_goal_example = utils.get_param(params, ISAAlgorithmBase.WAIT_FOR_GOAL_EXAMPLE, True)
-        self.has_observed_goal_example = np.zeros(self.num_domains, dtype=np.bool)
+        self.has_observed_goal_example = np.zeros((self.num_domains, self.num_agents), dtype=np.bool)
 
         # maximum episode annealing parameters
         self.use_max_episode_length_annealing = utils.get_param(params, ISAAlgorithmBase.USE_MAX_EPISODE_LENGTH_ANNEALING, False)
@@ -106,6 +107,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # set of automata per domain
         self.automata = None
         self._set_automata(target_automata)
+        # print("target_automata len :",len(target_automata))
+        # print("target_automata [0] len :",len(target_automata[0]))
+        # print("target_automata :",target_automata)
 
         # sets of examples (goal, deadend and incomplete)
         self.goal_examples = None
@@ -114,7 +118,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self._reset_examples()
 
         # keep track of the number of learnt automata per domain
-        self.automaton_counters = np.zeros(self.num_domains, dtype=np.int)
+        self.automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
         self.automaton_learning_episodes = [[] for _ in range(self.num_domains)]
 
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
@@ -122,6 +126,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             utils.rm_dirs(self.get_automaton_solution_folders())
             utils.rm_dirs(self.get_automaton_plot_folders())
             utils.rm_files(self.get_automaton_learning_episodes_files())
+
 
     '''
     Learning Loop (main loop, what happens when an episode ends, changes or was not completed)
@@ -135,56 +140,78 @@ class ISAAlgorithmBase(LearningAlgorithm):
         task = self._get_task(domain_id, task_id)  # get the task to learn
 
         # initialize reward and steps counters, histories and reset the task to its initial state
-        total_reward, episode_length = 0, 0
+        total_reward = [0 for i in range(self.num_agents)]
+        episode_length = 0
         observation_history, compressed_observation_history = [], []
         current_state = task.reset()
 
         # get initial observations and initialise histories
         initial_observations = self._get_task_observations(task)
+
         self._update_histories(observation_history, compressed_observation_history, initial_observations)
+        # task.render()
 
         # get actual initial automaton state (performs verification that there is only one possible initial state!)
-        current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations)
-
+        current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
         # update the automaton if the initial state achieves the goal and the example is not covered
-        if self.interleaved_automaton_learning and self._can_learn_new_automaton(domain_id, task):
+        can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
+
+        if self.interleaved_automaton_learning and any(can_learn_new_automaton):
             updated_automaton = self._perform_interleaved_automaton_learning(task, domain_id,
                                                                              current_automaton_state,
                                                                              observation_history,
-                                                                             compressed_observation_history)
-            if updated_automaton:  # get the actual initial state as done before
-                current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations)
+                                                                             compressed_observation_history,
+                                                                             can_learn_new_automaton)
+
+            if any(updated_automaton):  # get the actual initial state as done before
+                current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
-        interrupt_episode = False
-        automaton = self.automata[domain_id]
+        interrupt_episode = [False]*self.num_agents
+        automaton_all_agents = self.automata[domain_id]
 
-        while not task.is_terminal() and episode_length < self.max_episode_length and not interrupt_episode:
-            current_automaton_state_id = automaton.get_state_id(current_automaton_state)
-            action = self._choose_action(domain_id, task_id, current_state, automaton, current_automaton_state_id)
-            next_state, reward, is_terminal, _ = task.step(action)
+        is_terminal = task.is_terminal()
+
+        # while not all(is_terminal) and not any(is_goal_achieved) and episode_length < self.max_episode_length and not any(interrupt_episode):
+        while not all(is_terminal) and episode_length < self.max_episode_length and not any(interrupt_episode):
+
+            current_automaton_state_id = [automaton_all_agents[agent_id].get_state_id(current_automaton_state[agent_id]) 
+                                          if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
+            
+            # with AvgTimeWrapper("_choose_action"):
+            actions = [self._choose_action(domain_id, agent_id, task_id, current_state[agent_id], automaton_all_agents[agent_id], 
+                                        current_automaton_state_id[agent_id]) if not current_automaton_state_id[agent_id] == None 
+                                        else None for agent_id in range(self.num_agents)]
+            
+            next_state, reward, is_terminal, _ = task.step(actions)
             observations = self._get_task_observations(task)
+            terminated_agents = task.get_terminated_agents()
 
             # whether observations have changed or not is important for QRM when using compressed traces
             observations_changed = self._update_histories(observation_history, compressed_observation_history, observations)
 
             if self.train_model:
-                self._update_q_functions(task_id, current_state, action, next_state, is_terminal, observations, observations_changed)
+                self._update_q_functions(task_id, current_state, actions, next_state, is_terminal, observations, observations_changed, terminated_agents)
 
-            next_automaton_state = self._get_next_automaton_state(self.automata[domain_id], current_automaton_state,
-                                                                  observations, observations_changed)
-
+            next_automaton_state = [self._get_next_automaton_state(self.automata[domain_id][agent_id], current_automaton_state[agent_id],
+                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)] 
+    
             # episode has to be interrupted if an automaton is learnt
-            if not interrupt_episode and self.interleaved_automaton_learning and self._can_learn_new_automaton(domain_id, task):
+            can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
+
+
+            if not any(interrupt_episode) and self.interleaved_automaton_learning and any(can_learn_new_automaton):
                 interrupt_episode = self._perform_interleaved_automaton_learning(task, domain_id, next_automaton_state,
-                                                                                 observation_history,
-                                                                                 compressed_observation_history)
+                                                                                observation_history,
+                                                                                compressed_observation_history,
+                                                                                can_learn_new_automaton)
 
-            if not interrupt_episode:
-                automaton = self.automata[domain_id]
-                total_reward += reward
+            if not any(interrupt_episode):
+                automatons = self.automata[domain_id]
+                for agent_id in range(self.num_agents):
+                    total_reward[agent_id] += reward[agent_id]
 
-                self._on_performed_step(domain_id, task_id, next_state, reward, is_terminal, observations, automaton,
+                self._on_performed_step(domain_id, task_id, next_state, reward, is_terminal, observations, automatons,
                                         current_automaton_state, next_automaton_state, episode_length)
 
             # update current environment and automaton states and increase episode length
@@ -192,7 +219,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
             current_automaton_state = next_automaton_state
             episode_length += 1
 
-        completed_episode = not interrupt_episode
+        completed_episode = not any(interrupt_episode)
+
 
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
 
@@ -219,7 +247,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         pass
 
     @abstractmethod
-    def _update_q_functions(self, task_id, current_state, action, next_state, is_terminal, observations, observations_changed):
+    def _update_q_functions(self, task_id, current_state, action, next_state, is_terminal, observations, observations_changed, terminated_agents):
         pass
 
     @abstractmethod
@@ -237,12 +265,14 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.interleaved_automaton_learning = tmp_interleaved_automaton_learning
 
     def _set_has_observed_goal_example(self, domain_id, task):
-        if task.is_goal_achieved() and not self.has_observed_goal_example[domain_id]:
-            self.has_observed_goal_example[domain_id] = True
+        is_goal_achieved = task.is_goal_achieved()
+        for agent_id in range(self.num_agents):
+            if is_goal_achieved[agent_id] and not self.has_observed_goal_example[domain_id][agent_id]:
+                self.has_observed_goal_example[domain_id][agent_id] = True
 
     def _can_learn_new_automaton(self, domain_id, task):
         self._set_has_observed_goal_example(domain_id, task)
-        return not self.wait_for_goal_example or self.has_observed_goal_example[domain_id]
+        return [not self.wait_for_goal_example or self.has_observed_goal_example[domain_id][agent_id] for agent_id in range(self.num_agents)]
 
     '''
     Task Management Methods (getting observations)
@@ -250,27 +280,36 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _get_task_observations(self, task):
         observations = task.get_observations()
         if self.use_restricted_observables:
-            return observations.intersection(task.get_restricted_observables())
+            return [obs_set.intersection(task.get_restricted_observables()) for obs_set in observations] 
         return observations
 
     '''
     Automata Management Methods (setters, getters, associated rewards)
     '''
-    def _get_automaton(self, domain_id):
-        return self.automata[domain_id]
+    def _get_automaton(self, domain_id,agent_id):
+        # print("Self.automata :",self.automata)
+        return self.automata[domain_id][agent_id]
 
     def _get_next_automaton_state(self, automaton, current_automaton_state, observations, observations_changed):
         # automaton has to be navigated with compressed traces if specified (just when a change occurs)
+        if observations == None:
+            return None
         if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
             return current_automaton_state
         return automaton.get_next_state(current_automaton_state, observations)
 
-    def _get_initial_automaton_state_successors(self, domain_id, observations):
-        automaton = self._get_automaton(domain_id)
-        initial_state = automaton.get_initial_state()
-        return self._get_next_automaton_state(automaton, initial_state, observations, True)
+    def _get_initial_automaton_state_successors(self, domain_id, observations, updated_automaton):
+        automaton_state_successors_all_agents = []
+        for agent_id in range(self.num_agents):
+            if not updated_automaton[agent_id]:
+                automaton_state_successors_all_agents.append(None)
+                continue
+            automaton = self._get_automaton(domain_id, agent_id)
+            initial_state = automaton.get_initial_state()
+            automaton_state_successors_all_agents.append(self._get_next_automaton_state(automaton, initial_state, observations[agent_id], True))
+        return automaton_state_successors_all_agents
 
-    def _set_automata(self, target_automata):
+    def _set_automata(self, target_automata):       # don't change
         if self.initial_automaton_mode == "basic":
             self._set_basic_automata()
         elif self.initial_automaton_mode == "load_solution":
@@ -284,13 +323,16 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.automata = []
 
         for i in range(self.num_domains):
-            automaton_solution_folder = self.get_automaton_solution_folder(i)
-            last_automaton_filename = self._get_last_solution_filename(automaton_solution_folder)
-            automaton = self._parse_ilasp_solutions(last_automaton_filename)
-            automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
-            automaton.set_accept_state(ISAAlgorithmBase.ACCEPTING_STATE_NAME)
-            automaton.set_reject_state(ISAAlgorithmBase.REJECTING_STATE_NAME)
-            self.automata.append(automaton)
+            automatas_all_agents = []
+            for j in range(self.num_agents):
+                automaton_solution_folder = self.get_automaton_solution_folder(i,j)
+                last_automaton_filename = self._get_last_solution_filename(automaton_solution_folder)
+                automaton = self._parse_ilasp_solutions(last_automaton_filename)
+                automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
+                automaton.set_accept_state(ISAAlgorithmBase.ACCEPTING_STATE_NAME)
+                automaton.set_reject_state(ISAAlgorithmBase.REJECTING_STATE_NAME)
+                automatas_all_agents.append(automaton)
+            self.automata.append(automatas_all_agents)
 
     def _get_last_solution_filename(self, automaton_solution_folder):
         automaton_solutions = os.listdir(automaton_solution_folder)
@@ -307,14 +349,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         for _ in range(self.num_domains):
             # the initial automaton is an automaton that doesn't accept nor reject anything
-            automaton = SubgoalAutomaton()
-            automaton.add_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
-            automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
-            # automaton.add_state(ISAAlgorithm.ACCEPTING_STATE_NAME)  # DO NOT UNCOMMENT!
-            # automaton.add_state(ISAAlgorithm.REJECTING_STATE_NAME)
-            # automaton.set_accept_state(ISAAlgorithm.ACCEPTING_STATE_NAME)
-            # automaton.set_reject_state(ISAAlgorithm.REJECTING_STATE_NAME)
-            self.automata.append(automaton)
+            automatas_all_agents = []
+            for j in range(self.num_agents):
+                automaton = SubgoalAutomaton()
+                automaton.add_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
+                automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
+                # automaton.add_state(ISAAlgorithm.ACCEPTING_STATE_NAME)  # DO NOT UNCOMMENT!
+                # automaton.add_state(ISAAlgorithm.REJECTING_STATE_NAME)
+                # automaton.set_accept_state(ISAAlgorithm.ACCEPTING_STATE_NAME)
+                # automaton.set_reject_state(ISAAlgorithm.REJECTING_STATE_NAME)
+                automatas_all_agents.append(automaton)
+            self.automata.append(automatas_all_agents)
 
     '''
     Automata Learning Methods (example update, task generation/solving/parsing)
@@ -324,73 +369,94 @@ class ISAAlgorithmBase(LearningAlgorithm):
         pass
 
     def _perform_interleaved_automaton_learning(self, task, domain_id, current_automaton_state, observation_history,
-                                                compressed_observation_history):
+                                                compressed_observation_history, can_learn_new_automaton):
         """Updates the set of examples based on the current observed trace. In case the set of example is updated, it
         makes a call to the automata learner. Returns True if a new automaton has been learnt, False otherwise."""
         updated_examples = self._update_examples(task, domain_id, current_automaton_state, observation_history,
-                                                 compressed_observation_history)
-        if updated_examples:
-            if self.debug:
-                if self.use_compressed_traces:
-                    counterexample = str(compressed_observation_history)
-                else:
-                    counterexample = str(observation_history)
-                print("Updating automaton " + str(domain_id) + "... The counterexample is: " + counterexample)
-            self._update_automaton(task, domain_id)
-            return True  # whether a new automaton has been learnt
+                                                 compressed_observation_history, can_learn_new_automaton)
+        
+        out_all_agents = []
 
-        return False
+        # print("UPDATED EXAMPLES :",updated_examples)
+        for agent_id in range(self.num_agents):
+            if updated_examples[agent_id]:
+                if self.debug:
+                    if self.use_compressed_traces:
+                        counterexample = str(compressed_observation_history[agent_id])
+                    else:
+                        counterexample = str(observation_history[agent_id])
+                    print("Updating automaton " + "In Domain ID : " + str(domain_id) + " for Agent ID " + str(agent_id) + "\n\t... The counterexample is: " + counterexample)
+                self._update_automaton(task, domain_id, agent_id)
+                out_all_agents.append(True)  # whether a new automaton has been learnt
+                continue
+
+            out_all_agents.append(False)
+
+        return out_all_agents
 
     def _reset_examples(self):
         # there is a set of examples for each domain
-        self.goal_examples = [set() for _ in range(self.num_domains)]
-        self.dend_examples = [set() for _ in range(self.num_domains)]
-        self.inc_examples = [set() for _ in range(self.num_domains)]
+        self.goal_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
+        self.dend_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
+        self.inc_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
 
-    def _update_examples(self, task, domain_id, current_automaton_state, observation_history, compressed_observation_history):
+    def _update_examples(self, task, domain_id, current_automaton_state, observation_history, compressed_observation_history, can_learn_new_automaton):
         """Updates the set of examples. Returns True if the set of examples has been updated and False otherwise. Note
         that an update of the set of examples can be forced by setting 'current_automaton_state' to None."""
-        automaton = self.automata[domain_id]
+        out_all_agents = []
+        for agent_id in range(self.num_agents):
+            if not can_learn_new_automaton[agent_id]:
+                out_all_agents.append(False)
+                continue
+            
+            automaton = self.automata[domain_id][agent_id]
 
-        if task.is_terminal():
-            if task.is_goal_achieved():
-                if current_automaton_state is None or not automaton.is_accept_state(current_automaton_state):
-                    self._update_example_set(self.goal_examples[domain_id], observation_history, compressed_observation_history)
-                    return True
+            if task.is_terminal()[agent_id]:
+                if task.is_goal_achieved()[agent_id]:
+                    if current_automaton_state[agent_id] is None or not automaton.is_accept_state(current_automaton_state[agent_id]):
+                        self._update_example_set(self.goal_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        out_all_agents.append(True)
+                    else:
+                        out_all_agents.append(False)
+                else:
+                    if current_automaton_state[agent_id] is None or not automaton.is_reject_state(current_automaton_state[agent_id]):
+                        self._update_example_set(self.dend_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        out_all_agents.append(True)
+                    else:
+                        out_all_agents.append(False)
             else:
-                if current_automaton_state is None or not automaton.is_reject_state(current_automaton_state):
-                    self._update_example_set(self.dend_examples[domain_id], observation_history, compressed_observation_history)
-                    return True
-        else:
-            # just update incomplete examples if at least we have one goal or one deadend example (avoid overflowing the
-            # set of incomplete unnecessarily)
-            if current_automaton_state is None or automaton.is_terminal_state(current_automaton_state):
-                self._update_example_set(self.inc_examples[domain_id], observation_history, compressed_observation_history)
-                return True
-        return False  # whether example sets have been updated
+                # just update incomplete examples if at least we have one goal or one deadend example (avoid overflowing the
+                # set of incomplete unnecessarily)
+                if current_automaton_state[agent_id] is None or automaton.is_terminal_state(current_automaton_state[agent_id]):
+                    self._update_example_set(self.inc_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                    out_all_agents.append(True)
+                else:
+                    out_all_agents.append(False)  # whether example sets have been updated)
+        return out_all_agents
 
-    def _update_example_set(self, example_set, observation_history, compressed_observation_history):
-        """Updates the a given example set with the corresponding history of observations depending on whether
+    def _update_example_set(self, example_set, observation_history, compressed_observation_history):                # don't change
+        """Updates the a given example set with the corresponding history of observations depending on whether      
         compressed traces are used or not to learn the automata. An exception is thrown if a trace is readded."""
-        if self.use_compressed_traces:
-            history_tuple = tuple(compressed_observation_history)
-        else:
-            history_tuple = tuple(observation_history)
+        if self.use_compressed_traces:                               # don't change
+            history_tuple = tuple(compressed_observation_history)    # don't change
+        else:                                                        # don't change
+            history_tuple = tuple(observation_history)               # don't change
 
-        if history_tuple not in example_set:
-            example_set.add(history_tuple)
-        else:
-            raise RuntimeError("An example that an automaton is currently covered cannot be uncovered afterwards!")
+        if history_tuple not in example_set or history_tuple == (): 
+            if history_tuple != ():   # don't change
+                example_set.add(history_tuple)      # don't change
+        else:                                   # don't change
+            raise RuntimeError("An example that an automaton is currently covered cannot be uncovered afterwards!") # don't change
 
-    def _update_automaton(self, task, domain_id):
-        self.automaton_counters[domain_id] += 1  # increment the counter of the number of aut. learnt for a domain
+    def _update_automaton(self, task, domain_id, agent_id):
+        self.automaton_counters[domain_id][agent_id] += 1  # increment the counter of the number of aut. learnt for a domain
 
-        self._generate_ilasp_task(task, domain_id)  # generate the automata learning task
+        self._generate_ilasp_task(task, domain_id, agent_id)  # generate the automata learning task
 
-        solver_success = self._solve_ilasp_task(domain_id)  # run the task solver
+        solver_success = self._solve_ilasp_task(domain_id, agent_id)  # run the task solver
         if solver_success:
-            ilasp_solution_filename = os.path.join(self.get_automaton_solution_folder(domain_id),
-                                                   ISAAlgorithmBase.AUTOMATON_SOLUTION_FILENAME % self.automaton_counters[domain_id])
+            ilasp_solution_filename = os.path.join(self.get_automaton_solution_folder(domain_id, agent_id),
+                                                   ISAAlgorithmBase.AUTOMATON_SOLUTION_FILENAME % self.automaton_counters[domain_id][agent_id])
             candidate_automaton = self._parse_ilasp_solutions(ilasp_solution_filename)
 
             if candidate_automaton.get_num_states() > 0:
@@ -398,30 +464,30 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 candidate_automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
                 candidate_automaton.set_accept_state(ISAAlgorithmBase.ACCEPTING_STATE_NAME)
                 candidate_automaton.set_reject_state(ISAAlgorithmBase.REJECTING_STATE_NAME)
-                self.automata[domain_id] = candidate_automaton
+                self.automata[domain_id][agent_id] = candidate_automaton
 
                 # plot the new automaton
-                candidate_automaton.plot(self.get_automaton_plot_folder(domain_id),
-                                         ISAAlgorithmBase.AUTOMATON_PLOT_FILENAME % self.automaton_counters[domain_id])
+                candidate_automaton.plot(self.get_automaton_plot_folder(domain_id, agent_id),
+                                         ISAAlgorithmBase.AUTOMATON_PLOT_FILENAME % self.automaton_counters[domain_id][agent_id])
 
-                self._on_automaton_learned(domain_id)
+                self._on_automaton_learned(domain_id,agent_id)
             else:
                 # if the task is UNSATISFIABLE, it means the number of states is not enough to cover the examples, so
                 # the number of states is incremented by 1 and try again
-                self.num_automaton_states[domain_id] += 1
+                self.num_automaton_states[domain_id][agent_id] += 1
 
                 if self.debug:
-                    print("The number of states in the automaton has been increased to " + str(self.num_automaton_states[domain_id]))
+                    print("The number of states in the automaton has been increased to " + str(self.num_automaton_states[domain_id][agent_id]))
                     print("Updating automaton...")
 
-                self._update_automaton(task, domain_id)
+                self._update_automaton(task, domain_id, agent_id)
         else:
             raise RuntimeError("Error: Couldn't find an automaton under the specified timeout!")
 
-    def _generate_ilasp_task(self, task, domain_id):
-        utils.mkdir(self.get_automaton_task_folder(domain_id))
+    def _generate_ilasp_task(self, task, domain_id, agent_id):
+        utils.mkdir(self.get_automaton_task_folder(domain_id,agent_id))
 
-        ilasp_task_filename = ISAAlgorithmBase.AUTOMATON_TASK_FILENAME % self.automaton_counters[domain_id]
+        ilasp_task_filename = ISAAlgorithmBase.AUTOMATON_TASK_FILENAME % self.automaton_counters[domain_id][agent_id]
 
         observables = task.get_observables()
         if self.use_restricted_observables:
@@ -429,21 +495,21 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # the sets of examples are sorted to make sure that ILASP produces the same solution for the same sets (ILASP
         # can produce different hypothesis for the same set of examples but given in different order)
-        generate_ilasp_task(self.num_automaton_states[domain_id], ISAAlgorithmBase.ACCEPTING_STATE_NAME,
-                            ISAAlgorithmBase.REJECTING_STATE_NAME, observables, sorted(self.goal_examples[domain_id]),
-                            sorted(self.dend_examples[domain_id]), sorted(self.inc_examples[domain_id]),
-                            self.get_automaton_task_folder(domain_id), ilasp_task_filename, self.symmetry_breaking_method,
+        generate_ilasp_task(self.num_automaton_states[domain_id][agent_id], ISAAlgorithmBase.ACCEPTING_STATE_NAME,
+                            ISAAlgorithmBase.REJECTING_STATE_NAME, observables, sorted(self.goal_examples[domain_id][agent_id]),
+                            sorted(self.dend_examples[domain_id][agent_id]), sorted(self.inc_examples[domain_id][agent_id]),
+                            self.get_automaton_task_folder(domain_id,agent_id), ilasp_task_filename, self.symmetry_breaking_method,
                             self.max_disjunction_size, self.learn_acyclic_graph, self.use_compressed_traces,
                             self.avoid_learning_only_negative, self.prioritize_optimal_solutions, self.binary_folder_name)
 
-    def _solve_ilasp_task(self, domain_id):
-        utils.mkdir(self.get_automaton_solution_folder(domain_id))
+    def _solve_ilasp_task(self, domain_id, agent_id):
+        utils.mkdir(self.get_automaton_solution_folder(domain_id, agent_id))
 
-        ilasp_task_filename = os.path.join(self.get_automaton_task_folder(domain_id),
-                                           ISAAlgorithmBase.AUTOMATON_TASK_FILENAME % self.automaton_counters[domain_id])
+        ilasp_task_filename = os.path.join(self.get_automaton_task_folder(domain_id ,agent_id),
+                                           ISAAlgorithmBase.AUTOMATON_TASK_FILENAME % self.automaton_counters[domain_id][agent_id])
 
-        ilasp_solution_filename = os.path.join(self.get_automaton_solution_folder(domain_id),
-                                               ISAAlgorithmBase.AUTOMATON_SOLUTION_FILENAME % self.automaton_counters[domain_id])
+        ilasp_solution_filename = os.path.join(self.get_automaton_solution_folder(domain_id, agent_id),
+                                               ISAAlgorithmBase.AUTOMATON_SOLUTION_FILENAME % self.automaton_counters[domain_id][agent_id])
 
         return solve_ilasp_task(ilasp_task_filename, ilasp_solution_filename, timeout=self.ilasp_timeout,
                                 version=self.ilasp_version, max_body_literals=self.max_body_literals,
@@ -455,17 +521,18 @@ class ISAAlgorithmBase(LearningAlgorithm):
     '''
     Logging and Messaging Management Methods
     '''
-    def _restore_uncheckpointed_files(self):
+    def _restore_uncheckpointed_files(self):       # don't change
         super()._restore_uncheckpointed_files()
         self._remove_uncheckpointed_files()
 
     def _remove_uncheckpointed_files(self):
         """Removes files which were generated after the last checkpoint."""
         for domain_id in range(self.num_domains):
-            counter = self.automaton_counters[domain_id]
-            self._remove_uncheckpointed_files_helper(self.get_automaton_task_folder(domain_id), "task-", ".las", counter)
-            self._remove_uncheckpointed_files_helper(self.get_automaton_solution_folder(domain_id), "solution-", ".txt", counter)
-            self._remove_uncheckpointed_files_helper(self.get_automaton_plot_folder(domain_id), "plot-", ".png", counter)
+            for agent_id in range(self.num_agents):
+                counter = self.automaton_counters[domain_id][agent_id]
+                self._remove_uncheckpointed_files_helper(self.get_automaton_task_folder(domain_id, agent_id), "task-", ".las", counter)
+                self._remove_uncheckpointed_files_helper(self.get_automaton_solution_folder(domain_id, agent_id), "solution-", ".txt", counter)
+                self._remove_uncheckpointed_files_helper(self.get_automaton_plot_folder(domain_id, agent_id), "plot-", ".png", counter)
 
     def _remove_uncheckpointed_files_helper(self, folder, prefix, extension, automaton_counter):
         if utils.path_exists(folder):
@@ -475,34 +542,55 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
     def _write_automaton_learning_episodes(self):
         for domain_id in range(self.num_domains):
-            utils.mkdir(self.export_folder_names[domain_id])
-            with open(self.get_automaton_learning_episodes_file(domain_id), 'w') as f:
-                for episode in self.automaton_learning_episodes[domain_id]:
-                    f.write(str(episode) + '\n')
+            for agent_id in range(self.num_agents):
+                automaton_learning_ep_folder = self.get_automaton_learning_episodes_folder(domain_id)
+                utils.mkdir(automaton_learning_ep_folder)
+                with open(self.get_automaton_learning_episodes_file(domain_id, agent_id), 'w') as f:
+                    for episode in self.automaton_learning_episodes[domain_id]:
+                        f.write(str(episode) + '\n')
 
     '''
     File Management Methods
     '''
     def get_automaton_task_folders(self):
-        return [self.get_automaton_task_folder(domain_id) for domain_id in range(self.num_domains)]
+        folders =[]
+        for domain_id in range(self.num_domains):
+            for agent_id in range(self.num_agents): 
+                folders.append(self.get_automaton_task_folder(domain_id,agent_id))
+        return folders
 
-    def get_automaton_task_folder(self, domain_id):
-        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_TASK_FOLDER)
+    def get_automaton_task_folder(self, domain_id,agent_id):
+        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_TASK_FOLDER, "agent_" + str(agent_id))
 
     def get_automaton_solution_folders(self):
-        return [self.get_automaton_solution_folder(domain_id) for domain_id in range(self.num_domains)]
+        folders =[]
+        for domain_id in range(self.num_domains):
+            for agent_id in range(self.num_agents): 
+                folders.append(self.get_automaton_solution_folder(domain_id,agent_id))
+        return folders
 
-    def get_automaton_solution_folder(self, domain_id):
-        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_SOLUTION_FOLDER)
+    def get_automaton_solution_folder(self, domain_id, agent_id):
+        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_SOLUTION_FOLDER, "agent_" + str(agent_id))
 
     def get_automaton_plot_folders(self):
-        return [self.get_automaton_plot_folder(domain_id) for domain_id in range(self.num_domains)]
-
-    def get_automaton_plot_folder(self, domain_id):
-        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_PLOT_FOLDER)
+        folders =[]
+        for domain_id in range(self.num_domains):
+            for agent_id in range(self.num_agents): 
+                folders.append(self.get_automaton_plot_folder(domain_id,agent_id))
+        return folders
+    
+    def get_automaton_plot_folder(self, domain_id, agent_id):
+        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_PLOT_FOLDER, "agent_" + str(agent_id))
 
     def get_automaton_learning_episodes_files(self):
-        return [self.get_automaton_learning_episodes_file(domain_id) for domain_id in range(self.num_domains)]
-
-    def get_automaton_learning_episodes_file(self, domain_id):
-        return os.path.join(self.export_folder_names[domain_id], ISAAlgorithmBase.AUTOMATON_LEARNING_EPISODES_FILENAME)
+        files =[]
+        for domain_id in range(self.num_domains):
+            for agent_id in range(self.num_agents): 
+                files.append(self.get_automaton_learning_episodes_file(domain_id,agent_id))
+        return files
+    
+    def get_automaton_learning_episodes_file(self, domain_id, agent_id):
+        return os.path.join(self.get_automaton_learning_episodes_folder(domain_id), ISAAlgorithmBase.AUTOMATON_LEARNING_EPISODES_FILENAME % agent_id )
+    
+    def get_automaton_learning_episodes_folder(self, domain_id):
+        return os.path.join(self.export_folder_names[domain_id], "automaton_learning_episodes" )

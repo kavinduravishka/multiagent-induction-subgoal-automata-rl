@@ -5,7 +5,7 @@ import random
 import torch
 from torch import optim, nn
 
-from gym_subgoal_automata.utils.condition import EdgeCondition
+from gym_subgoal_automata_multiagent.utils.condition import EdgeCondition
 from reinforcement_learning.dqn_model import DQN
 from reinforcement_learning.experience_replay import ExperienceBuffer
 from reinforcement_learning.isa_base_algorithm import ISAAlgorithmBase

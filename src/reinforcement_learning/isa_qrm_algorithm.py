@@ -11,6 +11,8 @@ from utils import utils
 from reinforcement_learning.dqn_model import DQN
 from reinforcement_learning.experience_replay import ExperienceBuffer
 
+from performance_utils.performance_utils import AvgTime,AvgTimeWrapper
+
 # Experience class used to instantiate experiences added to the experience replay buffer when DQNs are used to
 # approximate the q-functions.
 Experience = collections.namedtuple("Experience", field_names=["state", "action", "next_state", "is_terminal",
@@ -31,8 +33,8 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
     REWARD_ON_REJECTING_STATE = "reward_rejecting_state"  # whether to give a reward of -1 in the rejecting state
 
-    TABULAR_MODEL_FILENAME = "model-%d.npy"  # %d = task id
-    DQN_MODEL_FILENAME = "model-%d-%s.pt"    # %d = task id, %s = automaton state
+    TABULAR_MODEL_FILENAME = "model-agent_%d-task_%d.npy"  # %d = agent_id, %d = task id # FIX references
+    DQN_MODEL_FILENAME = "model-agent_%d-task_%d-%s.pt"    # %d = agent_id, %d = task id, %s = automaton state # FIX references
 
     def __init__(self, tasks, num_tasks, export_folder_names, params, target_automata, binary_folder_name):
         super().__init__(tasks, num_tasks, export_folder_names, params, target_automata, binary_folder_name)
@@ -47,55 +49,105 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         # experience replay
         self.experience_replay_buffers = None
+        # self.use_experience_replay = True # REMOVE_LINE
         if self.use_experience_replay:
             self._build_experience_replay_buffers()
 
         # q-tables in the case of tabular QRM and dqn in the case of DQRM
-        self.q_functions = []
-        self.target_q_functions = []
-        self.optimizers = []
-        self.target_net_update_counter = {}
-        self._build_q_functions()
+        self.q_functions = [[[{}]]]            # [domain_id][agent_id][task_id]{state_id}
+        self.target_q_functions = [[[{}]]]     # [domain_id][agent_id][task_id]{state_id}
+        self.optimizers = [[[{}]]]             # [domain_id][agent_id][task_id]{state_id}
+        self.target_net_update_counter = [[[{}]]]   # [domain_id][agent_id][task_id]{state_id}
+
+        self._build_q_functions() # Changed for MULTIAGENT
 
     '''
     Building of Q-functions <automaton state, MDP state, action> (one for each <domain, task>)
     '''
     def _build_q_functions(self):
-        self.q_functions = [{} for _ in range(self.num_domains)]
+        self.q_functions = [[[{} for i in range(self.num_tasks)] for j in range(self.num_agents)] for k in range(self.num_domains)]
         if self.is_tabular_case:
             for domain_id in range(self.num_domains):
                 self._build_domain_tabular_q_functions(domain_id)
         else:
             self._init_target_net_update_counter()
-            self.target_q_functions = [{} for _ in range(self.num_domains)]
-            self.optimizers = [{} for _ in range(self.num_domains)]
+            self.target_q_functions = [[[{} for i in range(self.num_tasks)] for j in range(self.num_agents)] for k in range(self.num_domains)]
+            self.optimizers = [[[{} for i in range(self.num_tasks)] for j in range(self.num_agents)] for k in range(self.num_domains)]
 
             for domain_id in range(self.num_domains):
                 self._build_domain_deep_q_functions(domain_id)
 
     def _build_domain_tabular_q_functions(self, domain_id):
-        num_automaton_states = self._get_automaton(domain_id).get_num_states()
+        num_automaton_states = [self._get_automaton(domain_id,agent_id).get_num_states() for agent_id in range(self.num_agents)]
 
         for task_id in range(self.num_tasks):
             task = self._get_task(domain_id, task_id)
-            self.q_functions[domain_id][task_id] = np.zeros((num_automaton_states, task.observation_space.n,
-                                                             task.action_space.n), dtype=np.float32)
+            for agent_id in range(self.num_agents):
+                self.q_functions[domain_id][agent_id][task_id] = np.zeros((num_automaton_states[agent_id], task.observation_space[agent_id].n,
+                                                                task.action_space.n), dtype=np.float32)
+                
+    def _build_domain_tabular_q_function_for_specific_agent(self,domain_id, agent_id):
+        num_automaton_states = self._get_automaton(domain_id,agent_id).get_num_states()
+
+        for task_id in range(self.num_tasks):
+            task = self._get_task(domain_id, task_id)
+            self.q_functions[domain_id][agent_id][task_id] = np.zeros((num_automaton_states, task.observation_space[agent_id].n,
+                                                            task.action_space.n), dtype=np.float32)
 
     def _build_domain_deep_q_functions(self, domain_id):
-        q_functions = self.q_functions[domain_id]
-        target_q_functions = self.target_q_functions[domain_id]
-        optimizers = self.optimizers[domain_id]
-        target_net_update_counters = self.target_net_update_counter[domain_id]
+        q_functions = self.q_functions[domain_id]                 # [agent_id][task_id]{state_id}
+        target_q_functions = self.target_q_functions[domain_id]   # [agent_id][task_id]{state_id}
+        optimizers = self.optimizers[domain_id]                   # [agent_id][task_id]{state_id}
+
+        target_net_update_counters = self.target_net_update_counter[domain_id]   # [agent_id][task_id]{state_id}
 
         q_functions.clear()
         target_q_functions.clear()
         optimizers.clear()
         target_net_update_counters.clear()
 
-        current_tasks = self.tasks[domain_id]
-        current_automaton = self._get_automaton(domain_id)
+        current_tasks = self.tasks[domain_id]                  # [task_id]
+        current_automaton = [self._get_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
 
         for task_id in range(len(current_tasks)):
+            for agent_id in range(self.num_agents):
+                q_functions[agent_id][task_id] = {}
+                target_q_functions[agent_id][task_id] = {}
+                optimizers[agent_id][task_id] = {}
+                target_net_update_counters[agent_id][task_id] = {}
+
+            task = current_tasks[task_id]
+
+            num_states = task.observation_space[agent_id].n
+            num_actions = task.action_space.n
+
+            for agent_id in range(self.num_agents):
+                for state_id in range(current_automaton[agent_id].get_num_states()):
+                    q_functions[agent_id][task_id][state_id] = DQN(num_states, num_actions, self.num_layers, self.num_neurons_per_layer)
+                    q_functions[agent_id][task_id][state_id].to(self.device)
+                    target_q_functions[agent_id][task_id][state_id] = DQN(num_states, num_actions, self.num_layers, self.num_neurons_per_layer)
+                    target_q_functions[agent_id][task_id][state_id].to(self.device)
+                    target_q_functions[agent_id][task_id][state_id].load_state_dict(q_functions[agent_id][task_id][state_id].state_dict())
+                    optimizers[agent_id][task_id][state_id] = optim.Adam(q_functions[agent_id][task_id][state_id].parameters(), lr=self.learning_rate)
+                    target_net_update_counters[agent_id][task_id][state_id] = 0
+
+    def _build_domain_deep_q_function_for_specific_agent(self, domain_id, agent_id):
+        q_functions = self.q_functions[domain_id][agent_id]                 # [task_id]{state_id}
+        target_q_functions = self.target_q_functions[domain_id][agent_id]   # [task_id]{state_id}
+        optimizers = self.optimizers[domain_id][agent_id]                   # [task_id]{state_id}
+
+        target_net_update_counters = self.target_net_update_counter[domain_id][agent_id]   # [task_id]{state_id}
+
+        q_functions.clear()
+        target_q_functions.clear()
+        optimizers.clear()
+        target_net_update_counters.clear()
+
+        current_tasks = self.tasks[domain_id]                  # [task_id]
+        current_automaton = self._get_automaton(domain_id,agent_id)     # 
+
+        for task_id in range(len(current_tasks)):
+            # for agent_id in range(self.num_agents):
             q_functions[task_id] = {}
             target_q_functions[task_id] = {}
             optimizers[task_id] = {}
@@ -103,9 +155,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
             task = current_tasks[task_id]
 
-            num_states = task.observation_space.n
+            num_states = task.observation_space[agent_id].n
             num_actions = task.action_space.n
 
+            # for agent_id in range(self.num_agents):
             for state_id in range(current_automaton.get_num_states()):
                 q_functions[task_id][state_id] = DQN(num_states, num_actions, self.num_layers, self.num_neurons_per_layer)
                 q_functions[task_id][state_id].to(self.device)
@@ -116,18 +169,20 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                 target_net_update_counters[task_id][state_id] = 0
 
     def _build_experience_replay_buffers(self):
-        self.experience_replay_buffers = [ExperienceBuffer(self.experience_replay_buffer_size) for _ in range(self.num_tasks)]
+        self.experience_replay_buffers = [[ExperienceBuffer(self.experience_replay_buffer_size) for i in range(self.num_tasks)] 
+                                          for j in range(self.num_agents)]
 
     def _init_target_net_update_counter(self):
-        self.target_net_update_counter = [{} for _ in range(self.num_domains)]
+        self.target_net_update_counter = [[[{} for i in range(self.num_tasks)] for j in range(self.num_agents)] for k in range(self.num_domains)]    # [domain_id][agent_id][task_id]{state_id}
 
     '''
     Action choice during the episode
     '''
-    def _choose_action(self, domain_id, task_id, current_state, automaton, current_automaton_state):
-        q_function = self._get_q_function(domain_id, task_id)
+    def _choose_action(self, domain_id, agent_id, task_id, current_state, automaton, current_automaton_state): # SINGLE
+        q_function = self._get_q_function(domain_id, agent_id, task_id)
         task = self._get_task(domain_id, task_id)
-        return self._choose_egreedy_action(task, current_state, q_function[current_automaton_state])
+        return self._choose_egreedy_action(task, current_state, q_function[current_automaton_state]) 
+        # return next action for "task" for "agent" in "domain" at "state"
 
     '''
     Update of Q functions
@@ -139,41 +194,56 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
             return -1
         return 0
 
-    def _update_q_functions(self, task_id, current_state, action, next_state, is_terminal, observations, observations_changed):
+    def _update_q_functions(self, task_id, current_state, action, next_state, is_terminal, observations, observations_changed, terminated_agents):
         if self.use_experience_replay:
-            experience = Experience(current_state, action, next_state, is_terminal, observations, observations_changed)
-            experience_replay_buffer = self._get_experience_replay_buffer(task_id)
-            experience_replay_buffer.append(experience)
-            if len(experience_replay_buffer) >= self.experience_replay_start_size:
-                experience_batch = experience_replay_buffer.sample(self.experience_replay_batch_size)
+            for agent_id in range(self.num_agents):
+                if terminated_agents[agent_id] == True:
+                    continue
+                experience = Experience(current_state[agent_id], action[agent_id], next_state[agent_id], is_terminal[agent_id], observations[agent_id], 
+                                        observations_changed[agent_id])
+                
+                experience_replay_buffer = self._get_experience_replay_buffer(agent_id, task_id)
 
-                if self.is_tabular_case:
-                    for exp in experience_batch:
-                        self._update_tabular_q_functions(task_id, (exp.state, exp.action), exp.next_state,
-                                                         exp.is_terminal, exp.observations, exp.observations_changed)
-                else:
-                    self._update_deep_q_functions(task_id, experience_batch)
+                experience_replay_buffer.append(experience)
+                if len(experience_replay_buffer) >= self.experience_replay_start_size:
+                    experience_batch = experience_replay_buffer.sample(self.experience_replay_batch_size)
+
+                    if self.is_tabular_case:
+                        for exp in experience_batch:
+                            self._update_tabular_q_functions(agent_id, task_id, (exp.state, exp.action), exp.next_state,
+                                                            exp.is_terminal, exp.observations, exp.observations_changed)
+                    else:
+                        self._update_deep_q_functions(agent_id, task_id, experience_batch)
         else:
-            # update all q-tables of the current task (not other tasks because state spaces might be different!)
-            current_pair = (current_state, action)
-            self._update_tabular_q_functions(task_id, current_pair, next_state, is_terminal, observations, observations_changed)
+            for agent_id in range(self.num_agents):
+                if terminated_agents[agent_id] == True:
+                    continue
+                current_pair = (current_state[agent_id], action[agent_id])
 
-    def _update_tabular_q_functions(self, task_id, current_pair, next_state, is_terminal, observations, observations_changed):
+                # if observations[agent_id] != None:
+                self._update_tabular_q_functions(agent_id, task_id, current_pair, next_state[agent_id], is_terminal[agent_id], observations[agent_id], 
+                                                observations_changed[agent_id])
+                
+    def _update_tabular_q_functions(self, agent_id, task_id, current_pair, next_state, is_terminal, observations, observations_changed):
         for domain_id in range(self.num_domains):
+            if observations == None:
+                    continue
             task = self._get_task(domain_id, task_id)
-            automaton = self._get_automaton(domain_id)
-            q_table = self._get_q_function(domain_id, task_id)
+            automaton = self._get_automaton(domain_id, agent_id)
+            q_table = self._get_q_function(domain_id, agent_id, task_id)
 
             for automaton_state in automaton.get_states():
                 automaton_state_id = automaton.get_state_id(automaton_state)
 
                 next_automaton_state = self._get_next_automaton_state(automaton, automaton_state, observations, observations_changed)
-                next_automaton_state_id = automaton.get_state_id(next_automaton_state)
 
+                next_automaton_state_id = automaton.get_state_id(next_automaton_state)
+                
                 next_action = self._get_greedy_action(task, next_state, q_table[next_automaton_state_id])
                 next_pair = (next_state, next_action)
 
                 reward = self._get_automaton_transition_reward(automaton, automaton_state, next_automaton_state)
+                
                 if self.use_reward_shaping:
                     reward += self._get_pseudoreward(automaton, automaton_state, next_automaton_state)
 
@@ -184,7 +254,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                                 reward + self.discount_rate * q_table[next_automaton_state_id][next_pair] -
                                 q_table[automaton_state_id][current_pair])
 
-    def _update_deep_q_functions(self, task_id, experience_batch):
+    def _update_deep_q_functions(self, agent_id, task_id, experience_batch):
         states, actions, next_states, is_terminal, observations, observations_changed = zip(*experience_batch)
 
         states_v = torch.tensor(states).to(self.device)
@@ -193,9 +263,9 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         for domain_id in range(self.num_domains):
             automaton = self._get_automaton(domain_id)
-            q_functions = self._get_q_function(domain_id, task_id)
-            target_q_functions = self._get_target_q_function(domain_id, task_id)
-            optimizers = self._get_optimizer(domain_id, task_id)
+            q_functions = self._get_q_function(domain_id, agent_id, task_id)
+            target_q_functions = self._get_target_q_function(domain_id, agent_id, task_id)
+            optimizers = self._get_optimizer(domain_id, agent_id, task_id)
 
             for automaton_state in automaton.get_states():
                 if not automaton.is_terminal_state(automaton_state):
@@ -288,12 +358,13 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
             self._update_target_deep_q_functions(domain_id, task_id, current_automaton_state_id)
 
     def _update_target_deep_q_functions(self, domain_id, task_id, automaton_state_id):
-        self.target_net_update_counter[domain_id][task_id][automaton_state_id] += 1
-        if self.target_net_update_counter[domain_id][task_id][automaton_state_id] % self.target_net_update_frequency == 0:
-            net = self.q_functions[domain_id][task_id][automaton_state_id]
-            target_net = self.target_q_functions[domain_id][task_id][automaton_state_id]
-            target_net.load_state_dict(net.state_dict())
-            self.target_net_update_counter[domain_id][task_id][automaton_state_id] = 0
+        for agent_id in range(self.num_agents):
+            self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] += 1
+            if self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] % self.target_net_update_frequency == 0:
+                net = self.q_functions[domain_id][agent_id][task_id][automaton_state_id]
+                target_net = self.target_q_functions[domain_id][agent_id][task_id][automaton_state_id]
+                target_net.load_state_dict(net.state_dict())
+                self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] = 0
 
     '''
     Reward Shaping Methods
@@ -325,9 +396,18 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     '''
     What to do when a new automaton is learned
     '''
-    def _on_automaton_learned(self, domain_id):
+    def _on_automaton_learned(self, domain_id, agent_id = None):
         # the previous q-functions are not valid anymore since the automata structure has changed, so we reset them
-        self._reset_q_functions(domain_id)
+        if agent_id==None:
+            self._reset_q_functions(domain_id)
+        else:
+            self._reset_q_function_for_specific_agent(domain_id, agent_id)
+
+    def _reset_q_function_for_specific_agent(self, domain_id, agent_id):
+        if self.is_tabular_case:
+            self._build_domain_tabular_q_function_for_specific_agent(domain_id, agent_id)
+        else:
+            self._build_domain_deep_q_function_for_specific_agent(domain_id, agent_id)
 
     def _reset_q_functions(self, domain_id):
         if self.is_tabular_case:
@@ -342,60 +422,62 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     '''
     Model exporting and importing
     '''
-    def _get_tabular_model_path(self, domain_folder, task_id):
-        model_name = ISAAlgorithmQRM.TABULAR_MODEL_FILENAME % task_id
+    def _get_tabular_model_path(self, domain_folder, agent_id, task_id):
+        model_name = ISAAlgorithmQRM.TABULAR_MODEL_FILENAME % (agent_id, task_id)
         return os.path.join(domain_folder, model_name)
 
-    def _get_dqn_model_path(self, domain_folder, task_id, automaton_state):
-        model_name = ISAAlgorithmQRM.DQN_MODEL_FILENAME % (task_id, automaton_state)
+    def _get_dqn_model_path(self, domain_folder, agent_id, task_id, automaton_state):
+        model_name = ISAAlgorithmQRM.DQN_MODEL_FILENAME % (agent_id, task_id, automaton_state)
         return os.path.join(domain_folder, model_name)
 
     def _export_models(self):
         for domain_id in range(self.num_domains):
-            automaton = self._get_automaton(domain_id)
-            for task_id in range(self.num_tasks):
-                if self.is_tabular_case:
-                    self._export_tabular_model(domain_id, task_id)
-                else:
-                    for automaton_state in automaton.get_states():
-                        self._export_dqn_model(domain_id, task_id, automaton, automaton_state)
+            for agent_id in range(self.num_agents):
+                automaton = self._get_automaton(domain_id, agent_id)
+                for task_id in range(self.num_tasks):
+                    if self.is_tabular_case:
+                        self._export_tabular_model(domain_id, agent_id, task_id)
+                    else:
+                        for automaton_state in automaton.get_states():
+                            self._export_dqn_model(domain_id, agent_id, task_id, automaton, automaton_state)
 
-    def _export_tabular_model(self, domain_id, task_id):
+    def _export_tabular_model(self, domain_id, agent_id, task_id):
         domain_folder = self.get_models_folder(domain_id)
         utils.mkdir(domain_folder)
 
-        model_path = self._get_tabular_model_path(domain_folder, task_id)
-        q_table = self._get_q_function(domain_id, task_id)
+        model_path = self._get_tabular_model_path(domain_folder, agent_id, task_id)
+        q_table = self._get_q_function(domain_id, agent_id, task_id)
         np.save(model_path, q_table)
 
-    def _export_dqn_model(self, domain_id, task_id, automaton, automaton_state):
+    def _export_dqn_model(self, domain_id, agent_id, task_id, automaton, automaton_state):
         domain_folder = self.get_models_folder(domain_id)
         utils.mkdir(domain_folder)
 
-        model_path = self._get_dqn_model_path(domain_folder, task_id, automaton_state)
-        model = self._get_q_function(domain_id, task_id)[automaton.get_state_id(automaton_state)]
+        model_path = self._get_dqn_model_path(domain_folder, agent_id, task_id, automaton_state)
+        model = self._get_q_function(domain_id, agent_id, task_id)[automaton.get_state_id(automaton_state)]
         torch.save(model.state_dict(), model_path)
 
     def _import_models(self):
         for domain_id in range(self.num_domains):
-            automaton = self._get_automaton(domain_id)
-            for task_id in range(self.num_tasks):
-                if self.is_tabular_case:
-                    self._import_tabular_model(domain_id, task_id)
-                else:
-                    for automaton_state in automaton.get_states():
-                        self._import_dqn_model(domain_id, task_id, automaton, automaton_state)
+            for agent_id in range(self.num_agents):
+                automaton = self._get_automaton(domain_id)
+                for task_id in range(self.num_tasks):
+                    if self.is_tabular_case:
+                        self._import_tabular_model(domain_id, agent_id, task_id)
+                    else:
+                        for automaton_state in automaton.get_states():
+                            self._import_dqn_model(domain_id, agent_id, task_id, automaton, automaton_state)
 
-    def _import_tabular_model(self, domain_id, task_id):
+    def _import_tabular_model(self, domain_id, agent_id, task_id):
         domain_folder = self.get_models_folder(domain_id)
-        model_path = self._get_tabular_model_path(domain_folder, task_id)
-        self._set_q_function(domain_id, task_id, np.load(model_path))
+        model_path = self._get_tabular_model_path(domain_folder, agent_id, task_id)
+        self._set_q_function(domain_id, agent_id, task_id, np.load(model_path))
 
-    def _import_dqn_model(self, domain_id, task_id, automaton, automaton_state):
+    def _import_dqn_model(self, domain_id, agent_id, task_id, automaton, automaton_state):
         domain_folder = self.get_models_folder(domain_id)
-        model_path = self._get_dqn_model_path(domain_folder, task_id, automaton_state)
+        model_path = self._get_dqn_model_path(domain_folder, agent_id, task_id, automaton_state)
 
-        q_functions = self._get_q_function(domain_id, task_id)
+        q_functions = self._get_q_function(domain_id, agent_id, task_id)
         model = q_functions[automaton.get_state_id(automaton_state)]
         model.load_state_dict(torch.load(model_path))
         model.eval()
@@ -403,17 +485,17 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     '''
     Getters and setters
     '''
-    def _set_q_function(self, domain_id, task_id, q_function):
-        self.q_functions[domain_id][task_id] = q_function
+    def _set_q_function(self, domain_id, agent_id, task_id, q_function):
+        self.q_functions[domain_id][agent_id][task_id] = q_function
 
-    def _get_q_function(self, domain_id, task_id):
-        return self.q_functions[domain_id][task_id]
+    def _get_q_function(self, domain_id, agent_id, task_id):
+        return self.q_functions[domain_id][agent_id][task_id]
 
-    def _get_target_q_function(self, domain_id, task_id):
-        return self.target_q_functions[domain_id][task_id]
+    def _get_target_q_function(self, domain_id, agent_id, task_id):
+        return self.target_q_functions[domain_id][agent_id][task_id]
 
-    def _get_optimizer(self, domain_id, task_id):
-        return self.optimizers[domain_id][task_id]
+    def _get_optimizer(self, domain_id, agent_id, task_id):
+        return self.optimizers[domain_id][agent_id][task_id]
 
-    def _get_experience_replay_buffer(self, task_id):
-        return self.experience_replay_buffers[task_id]
+    def _get_experience_replay_buffer(self, agent_id, task_id):
+        return self.experience_replay_buffers[agent_id][task_id]

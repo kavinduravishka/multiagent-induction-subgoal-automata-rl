@@ -1,4 +1,4 @@
-from gym_subgoal_automata.utils.subgoal_automaton import SubgoalAutomaton
+from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
 from ilasp.ilasp_common import N_TRANSITION_STR, CONNECTED_STR
 from ilasp.parser.ilasp_parser_utils import parse_edge_rule, parse_negative_transition_rule
 

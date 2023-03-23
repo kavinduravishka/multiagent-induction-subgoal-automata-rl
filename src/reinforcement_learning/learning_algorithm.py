@@ -9,6 +9,8 @@ from timeit import default_timer as timer
 import torch
 from utils import utils
 
+# from performance_utils.performance_utils import AvgTime, AvgTimeWrapper
+
 
 class LearningAlgorithm(ABC):
     """
@@ -17,6 +19,7 @@ class LearningAlgorithm(ABC):
     DEBUG = "debug"                            # whether to print messages for debugging
     TRAIN_MODEL = "train_model"                # whether we are training or testing
     NUM_EPISODES = "num_episodes"              # number of episodes to execute the agent
+    NUM_AGENTS = "num_agents"                  # number of agents in a singel task environment
     MAX_EPISODE_LENGTH = "max_episode_length"  # maximum number of steps per episode
     LEARNING_RATE = "learning_rate"
     DISCOUNT_RATE = "discount_rate"
@@ -51,6 +54,7 @@ class LearningAlgorithm(ABC):
     ABSOLUTE_RUNNING_TIME_FILENAME = "running_time.txt"  # name of the file registering the total running time of the algorithm
     MODELS_FOLDER = "models"                             # where are the final models saved at the end of the learning
 
+
     def __init__(self, tasks, num_tasks, export_folder_names, params):
         self.num_domains = len(tasks)
         self.num_tasks = num_tasks
@@ -62,6 +66,7 @@ class LearningAlgorithm(ABC):
         self.debug = utils.get_param(params, LearningAlgorithm.DEBUG, False)
         self.train_model = utils.get_param(params, LearningAlgorithm.TRAIN_MODEL, True)
         self.num_episodes = utils.get_param(params, LearningAlgorithm.NUM_EPISODES, 20000)
+        self.num_agents = utils.get_param(params, LearningAlgorithm.NUM_AGENTS, 5)
         self.max_episode_length = utils.get_param(params, LearningAlgorithm.MAX_EPISODE_LENGTH, 100)
         self.learning_rate = utils.get_param(params, LearningAlgorithm.LEARNING_RATE, 0.1)
         self.discount_rate = utils.get_param(params, LearningAlgorithm.DISCOUNT_RATE, 0.99)
@@ -114,6 +119,7 @@ class LearningAlgorithm(ABC):
             utils.rm_dirs(self.get_models_folders())
             utils.rm_files(self.get_running_time_files())
 
+
     def __getstate__(self):
         # the loggers must be removed to produce a checkpoint
         state = self.__dict__.copy()
@@ -149,6 +155,7 @@ class LearningAlgorithm(ABC):
 
             history = compressed_history if self.use_compressed_traces else observation_history
             previous_episode = self.current_episode
+
             self._on_episode_end(completed_episode, ended_terminal, total_reward, episode_length, history)
 
             if previous_episode != self.current_episode:
@@ -238,24 +245,58 @@ class LearningAlgorithm(ABC):
 
     def _update_histories(self, observation_history, compressed_observation_history, observations):
         # update histories only if the observation is non-empty
-        if self.ignore_empty_observations and len(observations) == 0:
-            return False
+        out_all_agents = []
+        for agent_id in range(self.num_agents):
+            if observations[agent_id] == None:
+                out_all_agents.append(False)
+                try:
+                    assert agent_id + 1 <= len(observation_history) 
+                except AssertionError:
+                    observation_history.append([])
+                try:
+                    assert agent_id + 1 <= len(compressed_observation_history)
+                except AssertionError:
+                    compressed_observation_history.append([])
+                continue
+            elif self.ignore_empty_observations and len(observations[agent_id]) == 0:
+                out_all_agents.append(False)
+                try:
+                    assert agent_id + 1 <= len(observation_history) 
+                except AssertionError:
+                    observation_history.append([])
+                try:
+                    assert agent_id + 1 <= len(compressed_observation_history)
+                except AssertionError:
+                    compressed_observation_history.append([])
+                continue
 
-        observations_tuple = self._get_observations_as_ordered_tuple(observations)
-        observation_history.append(observations_tuple)
+            observations_tuple = self._get_observations_as_ordered_tuple(observations[agent_id])
+            try:
+                observation_history[agent_id].append(observations_tuple)
+            except IndexError:
+                observation_history.append([])
+                observation_history[agent_id].append(observations_tuple)
 
-        observations_changed = len(compressed_observation_history) == 0 or observations_tuple != compressed_observation_history[-1]
-        if observations_changed:
-            compressed_observation_history.append(observations_tuple)
+            try:
+                observations_changed = len(compressed_observation_history[agent_id]) == 0 or observations_tuple != compressed_observation_history[agent_id][-1]
+            except IndexError:
+                compressed_observation_history.append([])
+                observations_changed = len(compressed_observation_history[agent_id]) == 0 or observations_tuple != compressed_observation_history[agent_id][-1]
 
-        if self.use_compressed_traces:
-            return observations_changed
-        return True  # all observations are relevant if the traces are uncompressed
+            if observations_changed:
+                compressed_observation_history[agent_id].append(observations_tuple)
+
+            if self.use_compressed_traces:
+                out_all_agents.append(observations_changed)
+            else:
+                out_all_agents.append(True)  # all observations are relevant if the traces are uncompressed
+        
+        return out_all_agents
 
     '''
     Greedy Policy Evaluation
     '''
-    def _evaluate_greedy_policies(self):
+    def _evaluate_greedy_policies(self):                  # don't change this function
         self.train_model = False
         for domain_id in range(self.num_domains):
             for task_id in range(self.num_tasks):
@@ -263,12 +304,12 @@ class LearningAlgorithm(ABC):
         self.train_model = True
 
     def _evaluate_greedy_policies_helper(self, domain_id, task_id):
-        sum_total_reward, sum_episode_length = 0, 0
+        sum_total_reward, sum_episode_length = [0 for i in range(self.num_agents)], 0
         for evaluation_episode in range(self.greedy_evaluation_episodes):
             _, total_reward, episode_length, _, _, _ = self._run_episode(domain_id, task_id)
-            sum_total_reward += total_reward
-            sum_episode_length += episode_length
-        avg_total_reward = sum_total_reward / self.greedy_evaluation_episodes
+            sum_total_reward = [sum_total_reward[i] + total_reward[i] for i in range(self.num_agents)]
+            sum_episode_length = sum_episode_length + episode_length
+        avg_total_reward = [r / self.greedy_evaluation_episodes for r in sum_total_reward]
         avg_episode_length = sum_episode_length / self.greedy_evaluation_episodes
         self._log_reward_and_steps(self.reward_steps_greedy_loggers, domain_id, task_id, avg_total_reward, avg_episode_length)
 
@@ -282,8 +323,8 @@ class LearningAlgorithm(ABC):
                   " - Episode: " + str(episode) +
                   " - Terminal: " + str(ended_terminal) +
                   " - Reward: " + str(total_reward) +
-                  " - Steps: " + str(episode_length) +
-                  " - Observations: " + str(history))
+                  " - Steps: " + str(episode_length) + 
+                  " - Observations: \n" + "\n".join([str(h) for h in history]))
 
     def _init_reward_steps_loggers(self):
         if self.train_model:
@@ -299,27 +340,35 @@ class LearningAlgorithm(ABC):
     def _init_reward_steps_loggers_helper(self, folder_name, filename_pattern):
         reward_steps_loggers = []
         for domain_id in range(self.num_domains):
-            folder_name = os.path.join(self.export_folder_names[domain_id], folder_name)
-            utils.mkdir(folder_name)
+            agent_loggers = []
+            for agent_id in range(self.num_agents):
+                _folder_name = os.path.join(self.export_folder_names[domain_id], folder_name,"agent_" + str(agent_id))
+                utils.mkdir(_folder_name)
 
-            task_loggers = []
-            for task_id in range(self.num_tasks):
-                filename = filename_pattern % task_id
+                task_loggers = []
+                for task_id in range(self.num_tasks):
+                    filename = filename_pattern % task_id
 
-                name = os.path.join(folder_name, filename)
-                handler = logging.FileHandler(name)
+                    name = os.path.join(_folder_name, filename)
+                    handler = logging.FileHandler(name)
 
-                logger = logging.getLogger(name)
-                logger.setLevel(logging.INFO)
-                logger.addHandler(handler)
+                    logger = logging.getLogger(name)
+                    logger.setLevel(logging.INFO)
+                    logger.addHandler(handler)
 
-                task_loggers.append(logger)
+                    task_loggers.append(logger)
+                
+                agent_loggers.append(task_loggers)
 
-            reward_steps_loggers.append(task_loggers)
+            reward_steps_loggers.append(agent_loggers)
         return reward_steps_loggers
 
     def _log_reward_and_steps(self, reward_steps_loggers, domain_id, task_id, episode_reward, episode_length):
-        reward_steps_loggers[domain_id][task_id].info(";".join([str(episode_reward), str(episode_length)]))
+        for agent_id in range(self.num_agents):
+            # print("RSL D-G-T :",reward_steps_loggers[domain_id][agent_id][task_id])
+            # print(str(episode_reward), str(episode_length))
+            # print(str(episode_reward[agent_id]), str(episode_length))
+            reward_steps_loggers[domain_id][agent_id][task_id].info(";".join([str(episode_reward[agent_id]), str(episode_length)]))
 
     '''
     Checkpoint Management

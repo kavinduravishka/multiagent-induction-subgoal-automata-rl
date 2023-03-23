@@ -1,0 +1,7 @@
+scipy
+matplotlib
+numpy
+torch
+pandas
+tqdm
+# -e git://github.com/ertsiger/gym-subgoal-automata.git@3cc755b#egg=gym-subgoal-automata
