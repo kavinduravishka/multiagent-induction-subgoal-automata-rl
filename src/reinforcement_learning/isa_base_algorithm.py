@@ -141,7 +141,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # initialize reward and steps counters, histories and reset the task to its initial state
         total_reward = [0 for i in range(self.num_agents)]
-        episode_length = 0
+        episode_length = [0 for i in range(self.num_agents)]
         observation_history, compressed_observation_history = [], []
         current_state = task.reset()
 
@@ -173,7 +173,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         is_terminal = task.is_terminal()
 
         # while not all(is_terminal) and not any(is_goal_achieved) and episode_length < self.max_episode_length and not any(interrupt_episode):
-        while not all(is_terminal) and episode_length < self.max_episode_length and not any(interrupt_episode):
+        while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode):
 
             current_automaton_state_id = [automaton_all_agents[agent_id].get_state_id(current_automaton_state[agent_id]) 
                                           if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
@@ -217,7 +217,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             # update current environment and automaton states and increase episode length
             current_state = next_state
             current_automaton_state = next_automaton_state
-            episode_length += 1
+            episode_length = [episode_length[i] + 1* (not terminated_agents[i]) for i in range(self.num_agents)]
 
         completed_episode = not any(interrupt_episode)
 
@@ -365,7 +365,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
     Automata Learning Methods (example update, task generation/solving/parsing)
     '''
     @abstractmethod
-    def _on_automaton_learned(self, domain_id):
+    def _on_automaton_learned(self, domain_id, agent_id = None):
         pass
 
     def _perform_interleaved_automaton_learning(self, task, domain_id, current_automaton_state, observation_history,
