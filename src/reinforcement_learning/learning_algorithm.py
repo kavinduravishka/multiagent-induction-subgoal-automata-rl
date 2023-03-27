@@ -304,13 +304,13 @@ class LearningAlgorithm(ABC):
         self.train_model = True
 
     def _evaluate_greedy_policies_helper(self, domain_id, task_id):
-        sum_total_reward, sum_episode_length = [0 for i in range(self.num_agents)], 0
+        sum_total_reward, sum_episode_length = [0 for i in range(self.num_agents)], [0 for i in range(self.num_agents)]
         for evaluation_episode in range(self.greedy_evaluation_episodes):
             _, total_reward, episode_length, _, _, _ = self._run_episode(domain_id, task_id)
             sum_total_reward = [sum_total_reward[i] + total_reward[i] for i in range(self.num_agents)]
-            sum_episode_length = sum_episode_length + episode_length
+            sum_episode_length = [sum_episode_length[i] + episode_length[i] for i in range(self.num_agents)]
         avg_total_reward = [r / self.greedy_evaluation_episodes for r in sum_total_reward]
-        avg_episode_length = sum_episode_length / self.greedy_evaluation_episodes
+        avg_episode_length = [e / self.greedy_evaluation_episodes for e in sum_episode_length]
         self._log_reward_and_steps(self.reward_steps_greedy_loggers, domain_id, task_id, avg_total_reward, avg_episode_length)
 
     '''
@@ -365,10 +365,7 @@ class LearningAlgorithm(ABC):
 
     def _log_reward_and_steps(self, reward_steps_loggers, domain_id, task_id, episode_reward, episode_length):
         for agent_id in range(self.num_agents):
-            # print("RSL D-G-T :",reward_steps_loggers[domain_id][agent_id][task_id])
-            # print(str(episode_reward), str(episode_length))
-            # print(str(episode_reward[agent_id]), str(episode_length))
-            reward_steps_loggers[domain_id][agent_id][task_id].info(";".join([str(episode_reward[agent_id]), str(episode_length)]))
+            reward_steps_loggers[domain_id][agent_id][task_id].info(";".join([str(episode_reward[agent_id]), str(episode_length[agent_id])]))
 
     '''
     Checkpoint Management
