@@ -228,7 +228,9 @@ class LearningAlgorithm(ABC):
             q_values = [q_table[(state, action)] for action in range(task.action_space.n)]
             return utils.randargmax(q_values)
         else:
+            print("DEBUG : state   :",state)
             state_v = torch.tensor(state).to(self.device)
+            print("DEBUG : state_v :",state_v)
             q_values = q_table(state_v)
             return utils.randargmax(q_values.detach().cpu().numpy())
 

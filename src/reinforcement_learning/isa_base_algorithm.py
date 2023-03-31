@@ -3,6 +3,8 @@ import numpy as np
 import os
 
 from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
+from gym_subgoal_automata_multiagent.utils.merge_automata import merge_automata
+# from gym_subgoal_automata_multiagent.utils.merged_subgoal_automaton import MergedSubgoalAutomaton
 from reinforcement_learning.learning_algorithm import LearningAlgorithm
 from utils import utils
 from ilasp.generator.ilasp_task_generator import generate_ilasp_task
@@ -106,10 +108,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # set of automata per domain
         self.automata = None
+        self.merged_automata = None
+        self.shared_automata = None
         self._set_automata(target_automata)
-        # print("target_automata len :",len(target_automata))
-        # print("target_automata [0] len :",len(target_automata[0]))
-        # print("target_automata :",target_automata)
+        self._set_merged_automata(target_automata)
 
         # sets of examples (goal, deadend and incomplete)
         self.goal_examples = None
@@ -119,6 +121,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # keep track of the number of learnt automata per domain
         self.automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
+        self.merged_automaton_counter = 0
         self.automaton_learning_episodes = [[] for _ in range(self.num_domains)]
 
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
@@ -137,6 +140,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self._write_automaton_learning_episodes()
 
     def _run_episode(self, domain_id, task_id):
+        # print("DEBUG : started episode")
         task = self._get_task(domain_id, task_id)  # get the task to learn
 
         # initialize reward and steps counters, histories and reset the task to its initial state
@@ -153,6 +157,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # get actual initial automaton state (performs verification that there is only one possible initial state!)
         current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
+        current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
         # update the automaton if the initial state achieves the goal and the example is not covered
         can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
 
@@ -165,10 +170,16 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
             if any(updated_automaton):  # get the actual initial state as done before
                 current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
+                self._share_automaton(domain_id, updated_automaton)
+                self._merge_automaton(domain_id)
+                self._on_merged_automaton_learned(domain_id)
+                current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False]*self.num_agents
+
         automaton_all_agents = self.automata[domain_id]
+        merged_automaton_all_agents = self.merged_automata[domain_id]
 
         is_terminal = task.is_terminal()
 
@@ -177,10 +188,13 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
             current_automaton_state_id = [automaton_all_agents[agent_id].get_state_id(current_automaton_state[agent_id]) 
                                           if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
+            current_merged_automaton_state_id = [merged_automaton_all_agents[agent_id].get_state_id(current_merged_automaton_state[agent_id]) 
+                                          if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
+            # for agent_id in range(self.num_agents):
+            #     print("DEBUG : states in merged automata :",merged_automaton_all_agents[agent_id].states)
             
-            # with AvgTimeWrapper("_choose_action"):
-            actions = [self._choose_action(domain_id, agent_id, task_id, current_state[agent_id], automaton_all_agents[agent_id], 
-                                        current_automaton_state_id[agent_id]) if not current_automaton_state_id[agent_id] == None 
+            actions = [self._choose_action(domain_id, agent_id, task_id, current_state[agent_id], merged_automaton_all_agents[agent_id], 
+                                        current_merged_automaton_state_id[agent_id]) if not current_merged_automaton_state_id[agent_id] == None 
                                         else None for agent_id in range(self.num_agents)]
             
             next_state, reward, is_terminal, _ = task.step(actions)
@@ -194,7 +208,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 self._update_q_functions(task_id, current_state, actions, next_state, is_terminal, observations, observations_changed, terminated_agents)
 
             next_automaton_state = [self._get_next_automaton_state(self.automata[domain_id][agent_id], current_automaton_state[agent_id],
-                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)] 
+                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
+            next_merged_automaton_state = [self._get_next_automaton_state(self.merged_automata[domain_id][agent_id], current_merged_automaton_state[agent_id],
+                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
     
             # episode has to be interrupted if an automaton is learnt
             can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
@@ -205,22 +221,32 @@ class ISAAlgorithmBase(LearningAlgorithm):
                                                                                 observation_history,
                                                                                 compressed_observation_history,
                                                                                 can_learn_new_automaton)
+                
+                if any(interrupt_episode):
+                    self._share_automaton(domain_id, interrupt_episode)
+                    self._merge_automaton(domain_id)
+                    self._on_merged_automaton_learned(domain_id)
 
             if not any(interrupt_episode):
-                automatons = self.automata[domain_id]
+                automatons = self.merged_automata[domain_id]
                 for agent_id in range(self.num_agents):
                     total_reward[agent_id] += reward[agent_id]
 
+                # print("DEBUG : BEFORE _on_performed_step : current_merged_automaton_state :",current_merged_automaton_state)
+                # print("DEBUG : BEFORE _on_performed_step : next_merged_automaton_state    :",next_merged_automaton_state)
+
                 self._on_performed_step(domain_id, task_id, next_state, reward, is_terminal, observations, automatons,
-                                        current_automaton_state, next_automaton_state, episode_length)
+                                        current_merged_automaton_state, next_merged_automaton_state, episode_length)
 
             # update current environment and automaton states and increase episode length
             current_state = next_state
             current_automaton_state = next_automaton_state
+            current_merged_automaton_state = next_merged_automaton_state
             episode_length = [episode_length[i] + 1* (not terminated_agents[i]) for i in range(self.num_agents)]
 
         completed_episode = not any(interrupt_episode)
 
+        # print("DEBUG : completed episode")
 
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
 
@@ -235,7 +261,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.automaton_learning_episodes[current_domain_id].append(self.current_episode)
 
     @abstractmethod
-    def _choose_action(self, domain_id, task_id, current_state, automaton, current_automaton_state):
+    def _choose_action(self, domain_id, agent_id, task_id, current_state, automaton, current_automaton_state):
         pass
 
     @abstractmethod
@@ -284,13 +310,94 @@ class ISAAlgorithmBase(LearningAlgorithm):
         return observations
 
     '''
+    Automata Sharing and Merging Methods (share, merge, setters, getters, associated rewards)
+    '''
+
+    def _share_automaton(self,domain_id, updated_automata):
+        if self.shared_automata == None:
+            self.shared_automata = [[{}]*self.num_agents]*self.num_domains
+
+        for i in range(len(updated_automata)):
+            if updated_automata[i]:
+                for agent_id in range(self.num_agents):
+                    self.shared_automata[domain_id][agent_id][i] = self._get_automaton(domain_id, i)
+
+    def _merge_automaton(self, domain_id):
+        
+        # print("DEBUG : Merged automatons")
+        if self.merged_automata == None:
+            self.merged_automata = [[None]*self.num_agents]*self.num_domains
+
+        for agent_id in range(self.num_agents):
+            automatas_to_combine = [v for (k,v) in self.shared_automata[domain_id][agent_id].items()]
+            # print("DEBUG : len automatas_to_combine :", len(automatas_to_combine))
+            automata_1 = automatas_to_combine[0]
+            automata_1.plot("/tmp/before_merged_automata","before_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
+            self.merged_automaton_counter+=1
+            other_automata = automatas_to_combine[1:]
+            to_merge_counter = 0 
+            for automata_2 in other_automata:
+                automata_1.plot("/tmp/automata_to_merge","1_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
+                automata_2.plot("/tmp/automata_to_merge","2_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
+                automata_1 = merge_automata(automata_1, automata_2)
+
+                automata_1.plot("/tmp/merged_automata","merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
+                self.merged_automaton_counter+=1
+                to_merge_counter+=1
+            
+            automata_1.plot("/tmp/merged_automata","final_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
+            # print("DEBUG : states :",automata_1.states," no of states :",automata_1.get_num_states() )
+            self.merged_automata[domain_id][agent_id] = automata_1
+
+    def _get_merged_automaton(self, domain_id,agent_id):
+        return self.merged_automata[domain_id][agent_id]
+
+    def _get_initial_merged_automaton_state_successors(self, domain_id, observations, updated_automaton):
+        automaton_state_successors_all_agents = []
+        for agent_id in range(self.num_agents):
+            if not updated_automaton[agent_id]:
+                automaton_state_successors_all_agents.append(None)
+                continue
+            automaton = self._get_merged_automaton(domain_id, agent_id)
+            initial_state = automaton.get_initial_state()
+            automaton_state_successors_all_agents.append(self._get_next_automaton_state(automaton, initial_state, observations[agent_id], True))
+        return automaton_state_successors_all_agents
+        
+    def _set_merged_automata(self, target_automata):
+        if self.initial_automaton_mode == "basic":
+            self._set_basic_merged_automata()
+        elif self.initial_automaton_mode == "load_solution":
+            self._load_last_automata_solutions() # FIX this for merged automata
+        elif self.initial_automaton_mode == "target":
+            self.automata = target_automata
+        else:
+            raise RuntimeError("Error: The initial merged automaton mode \"%s\" is not recognised." % self.initial_automaton_mode)
+
+    def _set_basic_merged_automata(self):
+        self.merged_automata = []
+
+        for _ in range(self.num_domains):
+            # the initial automaton is an automaton that doesn't accept nor reject anything
+            merged_automatas_all_agents = []
+            for j in range(self.num_agents):
+                # automaton = SubgoalAutomaton()
+                automaton = SubgoalAutomaton()
+                automaton.add_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
+                automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
+                # automaton.add_state(ISAAlgorithm.ACCEPTING_STATE_NAME)  # DO NOT UNCOMMENT!
+                # automaton.add_state(ISAAlgorithm.REJECTING_STATE_NAME)
+                # automaton.set_accept_state(ISAAlgorithm.ACCEPTING_STATE_NAME)
+                # automaton.set_reject_state(ISAAlgorithm.REJECTING_STATE_NAME)
+                merged_automatas_all_agents.append(automaton)
+            self.merged_automata.append(merged_automatas_all_agents)
+
+    '''
     Automata Management Methods (setters, getters, associated rewards)
     '''
     def _get_automaton(self, domain_id,agent_id):
-        # print("Self.automata :",self.automata)
         return self.automata[domain_id][agent_id]
-
-    def _get_next_automaton_state(self, automaton, current_automaton_state, observations, observations_changed):
+    
+    def _get_next_automaton_state(self, automaton, current_automaton_state, observations, observations_changed): # For both agent auotmata and merged automata
         # automaton has to be navigated with compressed traces if specified (just when a change occurs)
         if observations == None:
             return None
@@ -351,6 +458,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             # the initial automaton is an automaton that doesn't accept nor reject anything
             automatas_all_agents = []
             for j in range(self.num_agents):
+                # automaton = SubgoalAutomaton()
                 automaton = SubgoalAutomaton()
                 automaton.add_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
                 automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
@@ -366,6 +474,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
     '''
     @abstractmethod
     def _on_automaton_learned(self, domain_id, agent_id = None):
+        pass
+
+    @abstractmethod
+    def _on_merged_automaton_learned(self, domain_id, agent_id = None):
         pass
 
     def _perform_interleaved_automaton_learning(self, task, domain_id, current_automaton_state, observation_history,
@@ -446,6 +558,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             if history_tuple != ():   # don't change
                 example_set.add(history_tuple)      # don't change
         else:                                   # don't change
+            # print("DEBUG : example causes to fail :",history_tuple,", Example set :",example_set )
             raise RuntimeError("An example that an automaton is currently covered cannot be uncovered afterwards!") # don't change
 
     def _update_automaton(self, task, domain_id, agent_id):
@@ -470,7 +583,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 candidate_automaton.plot(self.get_automaton_plot_folder(domain_id, agent_id),
                                          ISAAlgorithmBase.AUTOMATON_PLOT_FILENAME % self.automaton_counters[domain_id][agent_id])
 
-                self._on_automaton_learned(domain_id,agent_id)
+                # self._on_automaton_learned(domain_id,agent_id)
             else:
                 # if the task is UNSATISFIABLE, it means the number of states is not enough to cover the examples, so
                 # the number of states is incremented by 1 and try again

@@ -78,7 +78,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                 self._build_domain_deep_q_functions(domain_id)
 
     def _build_domain_tabular_q_functions(self, domain_id):
-        num_automaton_states = [self._get_automaton(domain_id,agent_id).get_num_states() for agent_id in range(self.num_agents)]
+        # num_automaton_states = [self._get_automaton(domain_id,agent_id).get_num_states() for agent_id in range(self.num_agents)]
+        current_automaton = [self._get_merged_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]
+        num_automaton_states = [self._get_merged_automaton(domain_id,agent_id).get_num_states() for agent_id in range(self.num_agents)]
+        # print("DEBUG : BUILD_Q : states :",[aut.states for aut in current_automaton ], ", num_states :",[aut.get_num_states() for aut in current_automaton])
 
         for task_id in range(self.num_tasks):
             task = self._get_task(domain_id, task_id)
@@ -87,7 +90,9 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                                                                 task.action_space.n), dtype=np.float32)
                 
     def _build_domain_tabular_q_function_for_specific_agent(self,domain_id, agent_id):
-        num_automaton_states = self._get_automaton(domain_id,agent_id).get_num_states()
+        # num_automaton_states = self._get_automaton(domain_id,agent_id).get_num_states()
+        num_automaton_states = self._get_merged_automaton(domain_id,agent_id).get_num_states()
+        # print("DEBUG : BUILD_Q : num_states :",num_automaton_states)
 
         for task_id in range(self.num_tasks):
             task = self._get_task(domain_id, task_id)
@@ -101,13 +106,18 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         target_net_update_counters = self.target_net_update_counter[domain_id]   # [agent_id][task_id]{state_id}
 
-        q_functions.clear()
-        target_q_functions.clear()
-        optimizers.clear()
-        target_net_update_counters.clear()
+        current_tasks = self.tasks[domain_id]
 
-        current_tasks = self.tasks[domain_id]                  # [task_id]
-        current_automaton = [self._get_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
+        for task_id in range(len(current_tasks)):
+            for agent_id in range(self.num_agents):
+                q_functions[agent_id][task_id].clear()
+                target_q_functions[agent_id][task_id].clear()
+                optimizers[agent_id][task_id].clear()
+                target_net_update_counters[agent_id][task_id].clear()
+
+                          # [task_id]
+        # current_automaton = [self._get_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
+        current_automaton = [self._get_merged_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
 
         for task_id in range(len(current_tasks)):
             for agent_id in range(self.num_agents):
@@ -120,6 +130,9 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
             num_states = task.observation_space[agent_id].n
             num_actions = task.action_space.n
+
+            # print("DEBUG : BUILD_Q : states :",current_automaton.states, ", num_states :",current_automaton.get_num_states())
+
 
             for agent_id in range(self.num_agents):
                 for state_id in range(current_automaton[agent_id].get_num_states()):
@@ -144,7 +157,8 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         target_net_update_counters.clear()
 
         current_tasks = self.tasks[domain_id]                  # [task_id]
-        current_automaton = self._get_automaton(domain_id,agent_id)     # 
+        # current_automaton = self._get_automaton(domain_id,agent_id)     # 
+        current_automaton = self._get_merged_automaton(domain_id,agent_id)     # 
 
         for task_id in range(len(current_tasks)):
             # for agent_id in range(self.num_agents):
@@ -157,6 +171,8 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
             num_states = task.observation_space[agent_id].n
             num_actions = task.action_space.n
+
+            # print("DEBUG : BUILD_Q : states :",current_automaton.states, ", num_states :",current_automaton.get_num_states())
 
             # for agent_id in range(self.num_agents):
             for state_id in range(current_automaton.get_num_states()):
@@ -181,7 +197,12 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     def _choose_action(self, domain_id, agent_id, task_id, current_state, automaton, current_automaton_state): # SINGLE
         q_function = self._get_q_function(domain_id, agent_id, task_id)
         task = self._get_task(domain_id, task_id)
+        # try:
+            # print("DEBUG : current_automaton_state :", current_automaton_state)
         return self._choose_egreedy_action(task, current_state, q_function[current_automaton_state]) 
+        # except IndexError as e:
+            # print("DEBUG : q_fuction shape :",q_function.shape, ", current_automaton_state :", current_automaton_state)
+            # raise(e)
         # return next action for "task" for "agent" in "domain" at "state"
 
     '''
@@ -229,7 +250,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
             if observations == None:
                     continue
             task = self._get_task(domain_id, task_id)
-            automaton = self._get_automaton(domain_id, agent_id)
+            automaton = self._get_merged_automaton(domain_id, agent_id)
             q_table = self._get_q_function(domain_id, agent_id, task_id)
 
             for automaton_state in automaton.get_states():
@@ -239,7 +260,18 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
                 next_automaton_state_id = automaton.get_state_id(next_automaton_state)
                 
+                # try:
                 next_action = self._get_greedy_action(task, next_state, q_table[next_automaton_state_id])
+                # except Exception as e:
+                #     print("DEBUG : agent_id :",agent_id)
+                #     print("DEBUG : q_table :",q_table)
+                #     print("DEBUG : q_table len :",len(q_table))
+                #     print("DEBUG : next_automaton_state :",next_automaton_state)
+                #     print("DEBUG : next_automaton_state_id :",next_automaton_state_id)
+                #     print("DEBUG : automaton states :",automaton.states)
+                #     print("DEBUG : automaton num states :",automaton.get_num_states())
+                #     raise(e)
+
                 next_pair = (next_state, next_action)
 
                 reward = self._get_automaton_transition_reward(automaton, automaton_state, next_automaton_state)
@@ -354,17 +386,17 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     '''
     def _on_performed_step(self, domain_id, task_id, next_state, reward, is_terminal, observations, automaton, current_automaton_state, next_automaton_state, episode_length):
         if not self.is_tabular_case:  # update target DQN weights if the episode is not interrupted
-            current_automaton_state_id = automaton.get_state_id(current_automaton_state)
+            current_automaton_state_id = [automaton[agent_id].get_state_id(current_automaton_state[agent_id]) for agent_id in range(self.num_agents)]
             self._update_target_deep_q_functions(domain_id, task_id, current_automaton_state_id)
 
     def _update_target_deep_q_functions(self, domain_id, task_id, automaton_state_id):
         for agent_id in range(self.num_agents):
-            self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] += 1
-            if self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] % self.target_net_update_frequency == 0:
-                net = self.q_functions[domain_id][agent_id][task_id][automaton_state_id]
-                target_net = self.target_q_functions[domain_id][agent_id][task_id][automaton_state_id]
+            self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] += 1
+            if self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] % self.target_net_update_frequency == 0:
+                net = self.q_functions[domain_id][agent_id][task_id][automaton_state_id[agent_id]]
+                target_net = self.target_q_functions[domain_id][agent_id][task_id][automaton_state_id[agent_id]]
                 target_net.load_state_dict(net.state_dict())
-                self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] = 0
+                self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] = 0
 
     '''
     Reward Shaping Methods
@@ -397,6 +429,13 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     What to do when a new automaton is learned
     '''
     def _on_automaton_learned(self, domain_id, agent_id = None):
+        # the previous q-functions are not valid anymore since the automata structure has changed, so we reset them
+        if agent_id==None:
+            self._reset_q_functions(domain_id)
+        else:
+            self._reset_q_function_for_specific_agent(domain_id, agent_id)
+
+    def _on_merged_automaton_learned(self, domain_id, agent_id = None):
         # the previous q-functions are not valid anymore since the automata structure has changed, so we reset them
         if agent_id==None:
             self._reset_q_functions(domain_id)
