@@ -55,10 +55,10 @@ def plot_single_task_curve(figure_id, num_episodes, items, learning_episodes, co
     plot_curve(figure_id, num_episodes, moving_avg, learning_episodes, colour, label)
 
 
-def save_reward_plot(figure_id, task_id, plot_title, output_filename_base, output_path):
+def save_reward_plot(agent_id, figure_id, task_id, plot_title, output_filename_base, output_path):
     plt.figure(figure_id)
     if plot_title is not None:
-        plt.title(plot_title, fontsize=26)
+        plt.title(plot_title+"_%d" %agent_id, fontsize=26)
     plt.xlabel("Number of episodes", fontsize=26)
     plt.ylabel("Average reward", fontsize=26)
     plt.xticks(fontsize=26)
@@ -66,15 +66,15 @@ def save_reward_plot(figure_id, task_id, plot_title, output_filename_base, outpu
     plt.ylim((0, REWARD_IF_GOAL + 0.1))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="lower right")
-    output_filename = os.path.join(output_path, "{}_reward_{}".format(output_filename_base, task_id))
+    output_filename = os.path.join(output_path, "{}_reward_{}_agent_{}".format(output_filename_base, task_id, agent_id))
     plt.savefig(output_filename + ".png", bbox_inches='tight')
     plt.savefig(output_filename + ".pdf", bbox_inches='tight')
 
 
-def save_steps_plot(figure_id, task_id, plot_title, max_steps, output_filename_base, output_path):
+def save_steps_plot(agent_id, figure_id, task_id, plot_title, max_steps, output_filename_base, output_path):
     plt.figure(figure_id)
     if plot_title is not None:
-        plt.title(plot_title, fontsize=26)
+        plt.title(plot_title+"_%d" %agent_id, fontsize=26)
     plt.xlabel("Number of episodes", fontsize=26)
     plt.ylabel("Average steps", fontsize=26)
     plt.xticks(fontsize=26)
@@ -82,7 +82,7 @@ def save_steps_plot(figure_id, task_id, plot_title, max_steps, output_filename_b
     plt.ylim((0, max_steps + 5))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="upper right")
-    output_filename = os.path.join(output_path, "{}_steps_{}".format(output_filename_base, task_id))
+    output_filename = os.path.join(output_path, "{}_steps_{}_agent_{}".format(output_filename_base, task_id, agent_id))
     plt.savefig(output_filename + ".png", bbox_inches='tight')
     plt.savefig(output_filename + ".pdf", bbox_inches='tight')
 
@@ -97,7 +97,7 @@ def init_total_rewards_steps(config_obj, num_episodes):
     return total_rewards_sum, total_steps_sum, automaton_learning_episodes
 
 
-def get_reward_steps_sums_for_setting(task_id, setting, max_episode_length, use_greedy_traces, greedy_evaluation_frequency):
+def get_reward_steps_sums_for_setting(agent_id, task_id, setting, max_episode_length, use_greedy_traces, greedy_evaluation_frequency):
     if CONFIG_FOLDERS_ATTR not in setting:
         raise AttributeError("Error: Missing field 'folder' in setting.")
 
@@ -110,14 +110,14 @@ def get_reward_steps_sums_for_setting(task_id, setting, max_episode_length, use_
     task_automaton_learning_episodes = []
 
     for folder in task_setting_folders:
-        rewards_steps_folder_path = os.path.join(folder, ISAAlgorithmBase.REWARD_STEPS_FOLDER)
+        rewards_steps_folder_path = os.path.join(folder, ISAAlgorithmBase.REWARD_STEPS_FOLDER,"agent_%d" %agent_id)
         rewards_steps_log_files = os.listdir(rewards_steps_folder_path)
 
         if len(rewards_steps_log_files) != num_tasks:
             raise Exception("Error: The expected number of tasks is {} and was {}.".format(num_tasks, len(rewards_steps_log_files)))
 
         rewards_steps_folder = ISAAlgorithmBase.REWARD_STEPS_GREEDY_FOLDER if use_greedy_traces else ISAAlgorithmBase.REWARD_STEPS_FOLDER
-        rewards_steps_log_file = os.path.join(folder, rewards_steps_folder, ISAAlgorithmBase.REWARD_STEPS_FILENAME % task_id)
+        rewards_steps_log_file = os.path.join(folder, rewards_steps_folder,"agent_%d" %agent_id, ISAAlgorithmBase.REWARD_STEPS_FILENAME % task_id)
         rewards, steps = read_reward_steps_list(rewards_steps_log_file, max_episode_length, use_greedy_traces, greedy_evaluation_frequency)
 
         if len(rewards) >= num_episodes:
@@ -135,7 +135,7 @@ def get_reward_steps_sums_for_setting(task_id, setting, max_episode_length, use_
     return task_rewards, task_steps, task_automaton_learning_episodes
 
 
-def process_tasks(config_obj, num_tasks, num_runs, num_episodes, max_episode_length, use_greedy_traces, greedy_evaluation_frequency,
+def process_tasks(config_obj, agent_id, num_tasks, num_runs, num_episodes, max_episode_length, use_greedy_traces, greedy_evaluation_frequency,
                   plot_task_curves, window_size, plot_title, output_filename_base, output_path):
     reward_fig_id, steps_fig_id = 0, 1
     total_rewards_sum, total_steps_sum, total_automaton_learning_episodes = init_total_rewards_steps(config_obj, num_episodes)
@@ -146,7 +146,7 @@ def process_tasks(config_obj, num_tasks, num_runs, num_episodes, max_episode_len
 
         for setting in config_obj:
             setting_label = setting[CONFIG_LABEL_ATTR]
-            task_rewards, task_steps, task_automaton_learning_episodes = get_reward_steps_sums_for_setting(task_id, setting, max_episode_length, use_greedy_traces, greedy_evaluation_frequency)
+            task_rewards, task_steps, task_automaton_learning_episodes = get_reward_steps_sums_for_setting(agent_id, task_id, setting, max_episode_length, use_greedy_traces, greedy_evaluation_frequency)
 
             total_rewards_sum[setting_label] += task_rewards
             total_steps_sum[setting_label] += task_steps
@@ -165,7 +165,7 @@ def process_tasks(config_obj, num_tasks, num_runs, num_episodes, max_episode_len
     return total_rewards_sum, total_steps_sum, total_automaton_learning_episodes
 
 
-def plot_average_task_curves(config_obj, num_tasks, num_runs, max_episode_length, window_size, plot_title, total_rewards_sum,
+def plot_average_task_curves(config_obj, agent_id, num_tasks, num_runs, max_episode_length, window_size, plot_title, total_rewards_sum,
                              total_steps_sum, total_automaton_learning_episodes, output_filename_base, output_path):
     reward_fig_id, steps_fig_id = 0, 1
     reward_fig, steps_fig = plt.figure(reward_fig_id), plt.figure(steps_fig_id)
@@ -180,8 +180,8 @@ def plot_average_task_curves(config_obj, num_tasks, num_runs, max_episode_length
         plot_curve(reward_fig_id, num_episodes, reward_mean, total_automaton_learning_episodes[setting_label], setting[CONFIG_COLOUR_ATTR], setting_label)
         plot_curve(steps_fig_id, num_episodes, steps_mean, total_automaton_learning_episodes[setting_label], setting[CONFIG_COLOUR_ATTR], setting_label)
 
-    save_reward_plot(reward_fig_id, "avg", plot_title, output_filename_base, output_path)
-    save_steps_plot(steps_fig_id, "avg", plot_title, max_episode_length, output_filename_base, output_path)
+    save_reward_plot(agent_id, reward_fig_id, "avg", plot_title, output_filename_base, output_path)
+    save_steps_plot(agent_id, steps_fig_id, "avg", plot_title, max_episode_length, output_filename_base, output_path)
     plt.close(reward_fig)
     plt.close(steps_fig)
 
@@ -193,6 +193,7 @@ def create_argparser():
     parser.add_argument("num_tasks", type=int, help="number of tasks")
     parser.add_argument("num_runs", type=int, help="number of runs")
     parser.add_argument("num_episodes", type=int, help="number of episodes")
+    parser.add_argument("num_agents", type=int, help="number of agents")
     parser.add_argument("--max_episode_length", type=int, default=100, help="maximum length of an episode")
     parser.add_argument("--plot_task_curves", action="store_true", help="whether to also plot task curves")
     parser.add_argument("--use_greedy_traces", "-g", action="store_true", help="whether to use the traces that use the greedy policy")
@@ -209,15 +210,16 @@ if __name__ == "__main__":
     plt.rc('text', usetex=args.use_tex)
     plt.rc('font', family='serif')
 
-    num_tasks, num_runs, num_episodes = args.num_tasks, args.num_runs, args.num_episodes
+    num_tasks, num_runs, num_episodes, num_agents = args.num_tasks, args.num_runs, args.num_episodes, args.num_agents
     config_obj = read_json_file(args.config)
     output_filename_base, output_path = os.path.basename(args.config)[:-len(".json")], os.path.abspath(os.path.dirname(args.config))
-    total_rewards_sum, total_steps_sum, total_automaton_learning_episodes = process_tasks(config_obj, num_tasks, num_runs,
-                                                                                          num_episodes, args.max_episode_length,
-                                                                                          args.use_greedy_traces, args.greedy_evaluation_frequency,
-                                                                                          args.plot_task_curves,
-                                                                                          args.window_size, args.plot_title,
-                                                                                          output_filename_base, output_path)
-    plot_average_task_curves(config_obj, num_tasks, num_runs, args.max_episode_length, args.window_size, args.plot_title,
-                             total_rewards_sum, total_steps_sum, total_automaton_learning_episodes, output_filename_base,
-                             output_path)
+    for agent_id in range(num_agents):
+        total_rewards_sum, total_steps_sum, total_automaton_learning_episodes = process_tasks(config_obj, agent_id, num_tasks, num_runs,
+                                                                                            num_episodes, args.max_episode_length,
+                                                                                            args.use_greedy_traces, args.greedy_evaluation_frequency,
+                                                                                            args.plot_task_curves,
+                                                                                            args.window_size, args.plot_title,
+                                                                                            output_filename_base, output_path)
+        plot_average_task_curves(config_obj, agent_id, num_tasks, num_runs, args.max_episode_length, args.window_size, args.plot_title,
+                                total_rewards_sum, total_steps_sum, total_automaton_learning_episodes, output_filename_base,
+                                output_path)
