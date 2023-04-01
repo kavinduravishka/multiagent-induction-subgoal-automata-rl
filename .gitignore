@@ -164,3 +164,8 @@ cython_debug/
 src/coffee-mail/*
 src/performance_utils/history
 src/performance_utils/logs
+
+# PDF files
+*.pdf
+
+**/plot_utils/*.png
