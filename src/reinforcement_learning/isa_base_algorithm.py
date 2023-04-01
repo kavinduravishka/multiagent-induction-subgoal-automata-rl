@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
-from gym_subgoal_automata_multiagent.utils.merge_automata import merge_automata
+from colab_utils.merge_automata import merge_automata
 # from gym_subgoal_automata_multiagent.utils.merged_subgoal_automaton import MergedSubgoalAutomaton
 from reinforcement_learning.learning_algorithm import LearningAlgorithm
 from utils import utils
