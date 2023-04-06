@@ -158,7 +158,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
 
         for task_id in range(self.num_tasks):
             # initialize container for the given task id
-            if task_id not in self.policy_bank:
+            if task_id+1 < len(self.policy_bank[agent_id]):
                 self.policy_bank[agent_id][task_id] = {}
                 self.policy_bank_update_counter[agent_id][task_id] = {}
 
@@ -648,8 +648,8 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             for agent_id in range(self.num_agents):
                 if terminated_agents[agent_id] == True:
                     continue
-                current_pair = (current_state, action)
-                self._update_tabular_q_functions(agent_id, task_id, current_pair, next_state, is_terminal, task.is_goal_achieved(), observations)
+                current_pair = (current_state[agent_id], action[agent_id])
+                self._update_tabular_q_functions(agent_id, task_id, current_pair, next_state[agent_id], is_terminal[agent_id], task.is_goal_achieved()[agent_id], observations[agent_id])
 
     def _get_experience_replay_buffer(self, agent_id, task_id):
         return self.experience_replay_buffers[agent_id][task_id]
@@ -676,7 +676,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             else:
                 next_action = self._get_greedy_action(task, next_state, self.policy_bank[agent_id][task_id][condition])
                 next_pair = (next_state, next_action)
-                delta = reward + self.discount_rate * self.policy_bank[task_id][condition][next_pair]
+                delta = reward + self.discount_rate * self.policy_bank[agent_id][task_id][condition][next_pair]
 
             self.policy_bank[agent_id][task_id][condition][current_pair] += self.learning_rate * (delta - self.policy_bank[agent_id][task_id][condition][current_pair])
             self.policy_bank_update_counter[agent_id][task_id][condition] += 1

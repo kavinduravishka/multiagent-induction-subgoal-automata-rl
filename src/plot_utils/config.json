@@ -1,9 +1,9 @@
 [
     {
-      "label": "QRM",
+      "label": "HRL",
       "folders": [
         "coffee-mail"
       ],
-      "colour": "#AAAA00"
+      "colour": "#FF0000"
     }
   ]
