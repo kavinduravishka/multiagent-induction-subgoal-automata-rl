@@ -35,7 +35,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
     ALWAYS_REUSE_QFUNCTION = "always_reuse_qfunction"          # always reuse a Q-function regardless of whether the condition is in the policy bank
     UPDATE_ALL_POLICY_BANK = "update_all_policy_bank"          # whether to update all the option q-functions in the policy bank or only those currently appearing in the automaton
 
-    TABULAR_MODEL_FILENAME = "model-agent_%d-task_%d.npy"  # %d = agent_id, %d = task id # FIX references
+    TABULAR_MODEL_FILENAME = "model-agent_%d-task_%d-%s.npy"  # %d = agent_id, %d = task id # FIX references
     DQN_MODEL_FILENAME = "model-agent_%d-task_%d-%s.pt"    # filename pattern for deep models of options q-functions
 
     TABULAR_META_MODEL_FILENAME = "meta-agent_%d-task_%d-%s.npy"  # filename patther for tabular models of q-functions over options
@@ -811,13 +811,14 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
     '''
     def _export_models(self):
         for domain_id in range(self.num_domains):
-            utils.mkdir(self.get_models_folder(domain_id))
-            for task_id in range(self.num_tasks):
-                self._export_policy_bank(domain_id, task_id)
-                self._export_meta_functions(domain_id, task_id)
+            for agent_id in range(self.num_agents):
+                utils.mkdir(self.get_models_folder(domain_id))
+                for task_id in range(self.num_tasks):
+                    self._export_policy_bank(agent_id, domain_id, task_id)
+                    self._export_meta_functions(agent_id, domain_id, task_id)
 
-    def _export_policy_bank(self, domain_id, task_id):
-        automaton = self._get_automaton(domain_id)
+    def _export_policy_bank(self, agent_id, domain_id, task_id):
+        automaton = self._get_automaton(domain_id, agent_id)
         conditions = automaton.get_all_conditions()
 
         for i in range(len(conditions)):
@@ -825,22 +826,22 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
 
             if self.is_tabular_case:
                 model_path = os.path.join(self.get_models_folder(domain_id),
-                                          ISAAlgorithmHRL.TABULAR_MODEL_FILENAME % (task_id, i))
-                np.save(model_path, self.policy_bank[task_id][condition])
+                                          ISAAlgorithmHRL.TABULAR_MODEL_FILENAME % (agent_id, task_id, i))
+                np.save(model_path, self.policy_bank[agent_id][task_id][condition])
             else:
                 model_path = os.path.join(self.get_models_folder(domain_id),
-                                          ISAAlgorithmHRL.DQN_MODEL_FILENAME % (task_id, i))
-                torch.save(self.policy_bank[task_id][condition].state_dict(), model_path)
+                                          ISAAlgorithmHRL.DQN_MODEL_FILENAME % (agent_id, task_id, i))
+                torch.save(self.policy_bank[agent_id][task_id][condition].state_dict(), model_path)
 
-    def _export_meta_functions(self, domain_id, task_id):
+    def _export_meta_functions(self, agent_id, domain_id, task_id):
         if self.is_tabular_case:
-            for automaton_state in self.meta_q_functions[domain_id][task_id]:
+            for automaton_state in self.meta_q_functions[domain_id][agent_id][task_id]:
                 model_path = os.path.join(self.get_models_folder(domain_id),
-                                          ISAAlgorithmHRL.TABULAR_META_MODEL_FILENAME % (task_id, automaton_state))
-                np.save(model_path, self.meta_q_functions[domain_id][task_id][automaton_state])
+                                          ISAAlgorithmHRL.TABULAR_META_MODEL_FILENAME % (agent_id, task_id, automaton_state))
+                np.save(model_path, self.meta_q_functions[domain_id][agent_id][task_id][automaton_state])
         else:
-            model_path = os.path.join(self.get_models_folder(domain_id), ISAAlgorithmHRL.DQN_META_MODEL_FILENAME % task_id)
-            torch.save(self.meta_q_functions[domain_id][task_id].state_dict(), model_path)
+            model_path = os.path.join(self.get_models_folder(domain_id), ISAAlgorithmHRL.DQN_META_MODEL_FILENAME % (agent_id, task_id))
+            torch.save(self.meta_q_functions[domain_id][agent_id][task_id].state_dict(), model_path)
 
     def _import_models(self):
         for domain_id in range(self.num_domains):
