@@ -141,9 +141,9 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
                 for condition in automaton.get_all_conditions():
                     if condition not in self.policy_bank[agent_id][task_id] or self.always_reuse_qfunction:
                         if copy_similar:
-                            self._build_function_from_existing_condition(task_id, task, condition)
+                            self._build_function_from_existing_condition_for_specific_agent(task_id, task, condition)
                         else:
-                            self._initialize_function_for_condition(task_id, task, condition)
+                            self._initialize_function_for_condition_for_specific_agent(task_id, task, condition)
 
                         if not self.is_tabular_case:
                             self.target_policy_bank[agent_id][task_id][condition] = DQN(task.observation_space[agent_id].n, task.action_space.n, self.num_layers, self.num_neurons_per_layer)
