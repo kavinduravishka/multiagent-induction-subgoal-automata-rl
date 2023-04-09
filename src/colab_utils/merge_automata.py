@@ -167,15 +167,11 @@ def _mergable(e1, e2, initial, accept, reject):
         return False
     
     if e1["to"]==e2["to"]:
-        # print("DEBUG : Mergable : e1(%s, %s) e2(%s, %s)" % (e1["from"], e1["to"], e2["from"], e2["to"]))
         return True
     else:
-        # if (e1["from"], e2["from"]) == initial or (e1["to"], e2["to"]) == accept or (e1["to"], e2["to"]) == reject:
         if (e1["to"], e2["to"]) == accept or (e1["to"], e2["to"]) == reject:
-            # print("DEBUG : Mergable : e1(%s, %s) e2(%s, %s)" % (e1["from"], e1["to"], e2["from"], e2["to"]))
             return True
         elif e1["to"] not in accept and e2["to"] not in accept and e1["to"] not in reject and e2["to"] not in reject:
-            # print("DEBUG : Mergable : e1(%s, %s) e2(%s, %s)" % (e1["from"], e1["to"], e2["from"], e2["to"]))
             return True
         else:
             return False
@@ -222,9 +218,13 @@ def _merge(e1, e2, new_automata:SubgoalAutomaton, new_automaton_state_counter:in
         state_mapping[e1_from] = new_from
     elif e1_from in state_mapping.keys() and e2_from in state_mapping.keys():
         if state_mapping[e1_from] != state_mapping[e2_from]:
-            print("DEBUG : state mapping :", state_mapping)
-            print("DEBUG : e1,e2 :", e1["from"], e2["from"])
-            raise ValueError("Two states which are being merged can't have two distinct names in the new SubgoalAutomata ")
+            absorb_into = state_mapping[e1_to]
+            absorbee = state_mapping[e2_to]
+
+            new_from = absorb_into
+            state_mapping[e2_to] = absorb_into
+
+            new_automata.absorb_state(absorb_into, absorbee)
         else:
             new_from = state_mapping[e1_from]
     else:
@@ -242,9 +242,13 @@ def _merge(e1, e2, new_automata:SubgoalAutomaton, new_automaton_state_counter:in
         state_mapping[e1_to] = new_to
     elif e1_to in state_mapping.keys() and e2_to in state_mapping.keys():
         if state_mapping[e1_to] != state_mapping[e2_to]:
-            print("DEBUG : state mapping :", state_mapping)
-            print("DEBUG : e1,e2 to:", e1["to"], e2["to"])
-            raise ValueError("Two states which are being merged can't have two distinct names in the new SubgoalAutomata ")
+            absorb_into = state_mapping[e1_to]
+            absorbee = state_mapping[e2_to]
+
+            new_to = absorb_into
+            state_mapping[e2_to] = absorb_into
+
+            new_automata.absorb_state(absorb_into, absorbee)
         else:
             new_to = state_mapping[e1_to]
     else:
