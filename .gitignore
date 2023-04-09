@@ -164,8 +164,11 @@ cython_debug/
 src/coffee-mail/*
 src/performance_utils/history
 src/performance_utils/logs
-
+src/results
+src/config/examples
+src/task_decomposition_sharing
 # PDF files
 *.pdf
 
 **/plot_utils/*.png
+**/plot_utils/*.json
