@@ -260,17 +260,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
                 next_automaton_state_id = automaton.get_state_id(next_automaton_state)
                 
-                # try:
                 next_action = self._get_greedy_action(task, next_state, q_table[next_automaton_state_id])
-                # except Exception as e:
-                #     print("DEBUG : agent_id :",agent_id)
-                #     print("DEBUG : q_table :",q_table)
-                #     print("DEBUG : q_table len :",len(q_table))
-                #     print("DEBUG : next_automaton_state :",next_automaton_state)
-                #     print("DEBUG : next_automaton_state_id :",next_automaton_state_id)
-                #     print("DEBUG : automaton states :",automaton.states)
-                #     print("DEBUG : automaton num states :",automaton.get_num_states())
-                #     raise(e)
 
                 next_pair = (next_state, next_action)
 
