@@ -101,10 +101,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         target_net_update_counters = self.target_net_update_counter[domain_id]   # [agent_id][task_id]{state_id}
 
-        q_functions.clear()
-        target_q_functions.clear()
-        optimizers.clear()
-        target_net_update_counters.clear()
+        # q_functions.clear()
+        # target_q_functions.clear()
+        # optimizers.clear()
+        # target_net_update_counters.clear()
 
         current_tasks = self.tasks[domain_id]                  # [task_id]
         current_automaton = [self._get_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
@@ -138,10 +138,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         target_net_update_counters = self.target_net_update_counter[domain_id][agent_id]   # [task_id]{state_id}
 
-        q_functions.clear()
-        target_q_functions.clear()
-        optimizers.clear()
-        target_net_update_counters.clear()
+        # q_functions.clear()
+        # target_q_functions.clear()
+        # optimizers.clear()
+        # target_net_update_counters.clear()
 
         current_tasks = self.tasks[domain_id]                  # [task_id]
         current_automaton = self._get_automaton(domain_id,agent_id)     # 
@@ -262,7 +262,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         next_states_v = torch.tensor(next_states).to(self.device)
 
         for domain_id in range(self.num_domains):
-            automaton = self._get_automaton(domain_id)
+            automaton = self._get_automaton(domain_id, agent_id)
             q_functions = self._get_q_function(domain_id, agent_id, task_id)
             target_q_functions = self._get_target_q_function(domain_id, agent_id, task_id)
             optimizers = self._get_optimizer(domain_id, agent_id, task_id)
@@ -354,17 +354,17 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
     '''
     def _on_performed_step(self, domain_id, task_id, next_state, reward, is_terminal, observations, automaton, current_automaton_state, next_automaton_state, episode_length):
         if not self.is_tabular_case:  # update target DQN weights if the episode is not interrupted
-            current_automaton_state_id = automaton.get_state_id(current_automaton_state)
+            current_automaton_state_id = [automaton[agent_id].get_state_id(current_automaton_state[agent_id]) for agent_id in range(self.num_agents)]
             self._update_target_deep_q_functions(domain_id, task_id, current_automaton_state_id)
 
     def _update_target_deep_q_functions(self, domain_id, task_id, automaton_state_id):
         for agent_id in range(self.num_agents):
-            self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] += 1
-            if self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] % self.target_net_update_frequency == 0:
-                net = self.q_functions[domain_id][agent_id][task_id][automaton_state_id]
-                target_net = self.target_q_functions[domain_id][agent_id][task_id][automaton_state_id]
+            self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] += 1
+            if self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] % self.target_net_update_frequency == 0:
+                net = self.q_functions[domain_id][agent_id][task_id][automaton_state_id[agent_id]]
+                target_net = self.target_q_functions[domain_id][agent_id][task_id][automaton_state_id[agent_id]]
                 target_net.load_state_dict(net.state_dict())
-                self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id] = 0
+                self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] = 0
 
     '''
     Reward Shaping Methods
