@@ -141,9 +141,9 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
                 for condition in automaton.get_all_conditions():
                     if condition not in self.policy_bank[agent_id][task_id] or self.always_reuse_qfunction:
                         if copy_similar:
-                            self._build_function_from_existing_condition_for_specific_agent(task_id, task, condition)
+                            self._build_function_from_existing_condition_for_specific_agent(agent_id, task_id, task, condition)
                         else:
-                            self._initialize_function_for_condition_for_specific_agent(task_id, task, condition)
+                            self._initialize_function_for_condition_for_specific_agent(agent_id, task_id, task, condition)
 
                         if not self.is_tabular_case:
                             self.target_policy_bank[agent_id][task_id][condition] = DQN(task.observation_space[agent_id].n, task.action_space.n, self.num_layers, self.num_neurons_per_layer)
@@ -773,7 +773,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             self._reset_q_functions(domain_id)
             self._reset_meta_experience_replay(domain_id)
         else:
-            self._reset_q_functionsfor_specific_agent(domain_id, agent_id)
+            self._reset_q_functions_for_specific_agent(domain_id, agent_id)
             self._reset_meta_experience_replay_for_specific_agent(domain_id, agent_id)
 
     def _reset_q_functions(self, domain_id):
@@ -792,7 +792,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
                 for task_id in range(self.num_tasks):
                     self.meta_experience_replay_buffers[domain_id][agent_id][task_id].clear()
 
-    def _reset_q_functionsfor_specific_agent(self, domain_id, agent_id):
+    def _reset_q_functions_for_specific_agent(self, domain_id, agent_id):
         self._build_domain_policy_bank_for_specific_agent(domain_id, agent_id, True)
 
         if self.is_tabular_case:
