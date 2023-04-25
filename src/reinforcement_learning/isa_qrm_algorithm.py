@@ -108,13 +108,6 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         current_tasks = self.tasks[domain_id]
 
-        for task_id in range(len(current_tasks)):
-            for agent_id in range(self.num_agents):
-                q_functions[agent_id][task_id].clear()
-                target_q_functions[agent_id][task_id].clear()
-                optimizers[agent_id][task_id].clear()
-                target_net_update_counters[agent_id][task_id].clear()
-
                           # [task_id]
         # current_automaton = [self._get_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
         current_automaton = [self._get_merged_automaton(domain_id,agent_id) for agent_id in range(self.num_agents)]     # [agent_id]
@@ -151,10 +144,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
 
         target_net_update_counters = self.target_net_update_counter[domain_id][agent_id]   # [task_id]{state_id}
 
-        q_functions.clear()
-        target_q_functions.clear()
-        optimizers.clear()
-        target_net_update_counters.clear()
+        # q_functions.clear()
+        # target_q_functions.clear()
+        # optimizers.clear()
+        # target_net_update_counters.clear()
 
         current_tasks = self.tasks[domain_id]                  # [task_id]
         # current_automaton = self._get_automaton(domain_id,agent_id)     # 
@@ -284,7 +277,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         next_states_v = torch.tensor(next_states).to(self.device)
 
         for domain_id in range(self.num_domains):
-            automaton = self._get_automaton(domain_id)
+            automaton = self._get_automaton(domain_id, agent_id)
             q_functions = self._get_q_function(domain_id, agent_id, task_id)
             target_q_functions = self._get_target_q_function(domain_id, agent_id, task_id)
             optimizers = self._get_optimizer(domain_id, agent_id, task_id)
