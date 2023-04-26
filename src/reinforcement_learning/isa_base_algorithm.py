@@ -171,9 +171,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
             if any(updated_automaton):  # get the actual initial state as done before
                 current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
                 self._share_automaton(domain_id, updated_automaton)
-                self._merge_automaton(domain_id)
+                updated_merged_automaton = self._merge_automaton(domain_id)
                 self._on_merged_automaton_learned(domain_id)
-                current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, updated_automaton)
+                current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, updated_merged_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False]*self.num_agents
@@ -224,7 +224,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 
                 if any(interrupt_episode):
                     self._share_automaton(domain_id, interrupt_episode)
-                    self._merge_automaton(domain_id)
+                    updated_merged_automaton = self._merge_automaton(domain_id)
                     self._on_merged_automaton_learned(domain_id)
 
             if not any(interrupt_episode):
@@ -323,6 +323,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self.shared_automata[domain_id][agent_id][i] = self._get_automaton(domain_id, i)
 
     def _merge_automaton(self, domain_id):
+        updated_merged_automaton = []
         if self.merged_automata == None:
             self.merged_automata = [[None]*self.num_agents]*self.num_domains
 
@@ -344,6 +345,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
             
             # automata_1.plot("/tmp/merged_automata","final_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
             self.merged_automata[domain_id][agent_id] = automata_1
+
+            updated_merged_automaton.append(True)
+        return updated_merged_automaton
 
     def _get_merged_automaton(self, domain_id,agent_id):
         return self.merged_automata[domain_id][agent_id]
