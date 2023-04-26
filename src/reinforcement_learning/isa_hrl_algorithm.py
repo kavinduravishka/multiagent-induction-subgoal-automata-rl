@@ -626,12 +626,13 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
 
     def _update_q_functions(self, task_id, current_state, action, next_state, is_terminal, observations, _, terminated_agents):
         task = self._get_task(0, task_id)
+        is_goal_achieved =  task.is_goal_achieved()
 
         if self.use_experience_replay:
             for agent_id in range(self.num_agents):
                 if terminated_agents[agent_id] == True:
                     continue
-                experience = Experience(current_state[agent_id], action[agent_id], next_state[agent_id], is_terminal[agent_id], observations[agent_id])
+                experience = Experience(current_state[agent_id], action[agent_id], next_state[agent_id], is_terminal[agent_id], is_goal_achieved[agent_id], observations[agent_id])
                 experience_replay_buffer = self._get_experience_replay_buffer(agent_id, task_id)
                 experience_replay_buffer.append(experience)
                 if len(experience_replay_buffer) >= self.experience_replay_start_size:
