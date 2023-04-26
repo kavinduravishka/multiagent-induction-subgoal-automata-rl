@@ -323,30 +323,26 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self.shared_automata[domain_id][agent_id][i] = self._get_automaton(domain_id, i)
 
     def _merge_automaton(self, domain_id):
-        
-        # print("DEBUG : Merged automatons")
         if self.merged_automata == None:
             self.merged_automata = [[None]*self.num_agents]*self.num_domains
 
         for agent_id in range(self.num_agents):
             automatas_to_combine = [v for (k,v) in self.shared_automata[domain_id][agent_id].items()]
-            # print("DEBUG : len automatas_to_combine :", len(automatas_to_combine))
             automata_1 = automatas_to_combine[0]
-            automata_1.plot("/tmp/before_merged_automata","before_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
-            self.merged_automaton_counter+=1
+            # automata_1.plot("/tmp/before_merged_automata","before_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
+            # self.merged_automaton_counter+=1
             other_automata = automatas_to_combine[1:]
-            to_merge_counter = 0 
+            # to_merge_counter = 0 
             for automata_2 in other_automata:
-                automata_1.plot("/tmp/automata_to_merge","1_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
-                automata_2.plot("/tmp/automata_to_merge","2_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
+                # automata_1.plot("/tmp/automata_to_merge","1_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
+                # automata_2.plot("/tmp/automata_to_merge","2_to_be_merged-%d-%d-%d.png" % (agent_id, self.merged_automaton_counter, to_merge_counter))
                 automata_1 = merge_automata(automata_1, automata_2)
 
-                automata_1.plot("/tmp/merged_automata","merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
-                self.merged_automaton_counter+=1
-                to_merge_counter+=1
+                # automata_1.plot("/tmp/merged_automata","merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
+                # self.merged_automaton_counter+=1
+                # to_merge_counter+=1
             
-            automata_1.plot("/tmp/merged_automata","final_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
-            # print("DEBUG : states :",automata_1.states," no of states :",automata_1.get_num_states() )
+            # automata_1.plot("/tmp/merged_automata","final_merged-%d-%d.png" % (agent_id, self.merged_automaton_counter))
             self.merged_automata[domain_id][agent_id] = automata_1
 
     def _get_merged_automaton(self, domain_id,agent_id):
