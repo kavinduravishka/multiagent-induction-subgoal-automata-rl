@@ -143,7 +143,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self._write_automaton_learning_episodes()
 
     def _run_episode(self, domain_id, task_id):
-        # print("DEBUG : started episode")
         task = self._get_task(domain_id, task_id)  # get the task to learn
 
         # initialize reward and steps counters, histories and reset the task to its initial state
@@ -195,12 +194,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # while not all(is_terminal) and not any(is_goal_achieved) and episode_length < self.max_episode_length and not any(interrupt_episode):
         while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode):
 
-            current_automaton_state_id = [automaton_all_agents[agent_id].get_state_id(current_automaton_state[agent_id]) 
-                                          if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
             current_merged_automaton_state_id = [merged_automaton_all_agents[agent_id].get_state_id(current_merged_automaton_state[agent_id]) 
                                           if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
-            # for agent_id in range(self.num_agents):
-            #     print("DEBUG : states in merged automata :",merged_automaton_all_agents[agent_id].states)
             
             actions = [self._choose_action(domain_id, agent_id, task_id, current_state[agent_id], merged_automaton_all_agents[agent_id], 
                                         current_merged_automaton_state_id[agent_id]) if not current_merged_automaton_state_id[agent_id] == None 
@@ -245,9 +240,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 for agent_id in range(self.num_agents):
                     total_reward[agent_id] += reward[agent_id]
 
-                # print("DEBUG : BEFORE _on_performed_step : current_merged_automaton_state :",current_merged_automaton_state)
-                # print("DEBUG : BEFORE _on_performed_step : next_merged_automaton_state    :",next_merged_automaton_state)
-
                 self._on_performed_step(domain_id, task_id, next_state, reward, is_terminal, observations, automatons,
                                         current_merged_automaton_state, next_merged_automaton_state, episode_length)
 
@@ -259,7 +251,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         completed_episode = not any(interrupt_episode)
 
-        # print("DEBUG : completed episode")
 
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
 
