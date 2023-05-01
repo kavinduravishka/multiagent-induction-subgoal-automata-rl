@@ -3,7 +3,9 @@ import numpy as np
 import os
 
 from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
+from colab_utils.a_star_for_subgoal_automaton import AstarSearch
 from colab_utils.merge_automata import merge_automata
+
 # from gym_subgoal_automata_multiagent.utils.merged_subgoal_automaton import MergedSubgoalAutomaton
 from reinforcement_learning.learning_algorithm import LearningAlgorithm
 from utils import utils
@@ -109,6 +111,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # set of automata per domain
         self.automata = None
         self.merged_automata = None
+        self.a_star_automata = None
         self.shared_automata = None
         self._set_automata(target_automata)
         self._set_merged_automata(target_automata)
@@ -153,11 +156,15 @@ class ISAAlgorithmBase(LearningAlgorithm):
         initial_observations = self._get_task_observations(task)
 
         self._update_histories(observation_history, compressed_observation_history, initial_observations)
-        # task.render()
+
+        self._initiate_A_star()
 
         # get actual initial automaton state (performs verification that there is only one possible initial state!)
         current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
-        current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
+        current_merged_automaton_state_candidates = self._get_initial_A_star_merged_automaton_state(domain_id, initial_observations, [True for t in range(self.num_agents)])
+
+        current_merged_automaton_state = [ current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
+
         # update the automaton if the initial state achieves the goal and the example is not covered
         can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
 
@@ -172,8 +179,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
                 self._share_automaton(domain_id, updated_automaton)
                 updated_merged_automaton = self._merge_automaton(domain_id)
+                self._initiate_A_star()
                 self._on_merged_automaton_learned(domain_id)
-                current_merged_automaton_state = self._get_initial_merged_automaton_state_successors(domain_id, initial_observations, updated_merged_automaton)
+                current_merged_automaton_state_candidates = self._get_initial_A_star_merged_automaton_state(domain_id, initial_observations, updated_merged_automaton)
+                current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False]*self.num_agents
@@ -209,9 +218,13 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
             next_automaton_state = [self._get_next_automaton_state(self.automata[domain_id][agent_id], current_automaton_state[agent_id],
                                                                 observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
-            next_merged_automaton_state = [self._get_next_automaton_state(self.merged_automata[domain_id][agent_id], current_merged_automaton_state[agent_id],
+            
+            next_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], current_merged_automaton_state[agent_id],
                                                                 observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
     
+            next_merged_automaton_state = [self._get_best_candidate_state_out_of_a_star_candidate(domain_id, agent_id, task_id, current_state[agent_id],
+                                                                                                  actions[agent_id], next_merged_automaton_state_candidates[agent_id])
+                                                                                                    for agent_id in range(self.num_agents)]
             # episode has to be interrupted if an automaton is learnt
             can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
 
@@ -390,6 +403,66 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 # automaton.set_reject_state(ISAAlgorithm.REJECTING_STATE_NAME)
                 merged_automatas_all_agents.append(automaton)
             self.merged_automata.append(merged_automatas_all_agents)
+
+    '''
+    Manage A star objects
+    '''
+    def _initiate_A_star(self):
+        self.a_star_automata = [[AstarSearch(self.merged_automata[domain_id][agent_id]) for agent_id in range(self.num_agents)] for domain_id in range(self.num_domains)]
+
+    def _reset_A_star(self):
+        self._initiate_A_star()
+
+    def _get_A_star_automaton(self, domain_id, agent_id):
+        return self.a_star_automata[domain_id][agent_id]
+    
+    # def _get_satisfied_conditions(self, automaton, current_automaton_state, observations, observations_changed):
+    #     # automaton has to be navigated with compressed traces if specified (just when a change occurs)
+    #     if observations == None:
+    #         return "<None : obs>"
+    #     if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+    #         return "<Empty : obs>"
+    #     return automaton.get_all_satisfying_edges(current_automaton_state, observations)
+    
+    def _get_next_A_star_merged_automaton_state(self, a_star_automaton: AstarSearch, current_automaton_state, observations, observations_changed):
+        if observations == None:
+            return [None]
+        if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+            return [current_automaton_state]
+        candidate_states = a_star_automaton.get_next_automaton_states(observations)
+        return candidate_states
+    
+    # def _get_current_A_star_merged_automaton_state(self, a_star_automaton: AstarSearch, current_automaton_state, observations, observations_changed):
+    #     if observations == None:
+    #         return None
+    #     if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+    #         return current_automaton_state
+    #     candidate_states = a_star_automaton.get_current_automaton_states()
+    #     return candidate_states
+    
+    # def _get_future_A_star_merged_automaton_state(self, a_star_automaton: AstarSearch, current_automaton_state, observations, observations_changed):
+    #     if observations == None:
+    #         return None
+    #     if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+    #         return current_automaton_state
+    #     candidate_states = a_star_automaton.get_next_automaton_states_without_updating(observations)
+    #     return candidate_states
+    
+    def _get_initial_A_star_merged_automaton_state(self, domain_id, observations, updated_automaton):
+        automaton_state_successor_candidates = []
+        for agent_id in range(self.num_agents):
+            if not updated_automaton[agent_id]:
+                automaton_state_successor_candidates.append(None)
+                continue
+            automaton = self._get_A_star_automaton(domain_id, agent_id)
+            initial_state = automaton.get_initial_state()
+            automaton_state_successor_candidates.append(self._get_next_A_star_merged_automaton_state(automaton, initial_state, observations[agent_id], True))
+            # automaton_state_successors_all_agents.append()
+        return automaton_state_successor_candidates
+    
+    @abstractmethod
+    def _get_best_candidate_state_out_of_a_star_candidate(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        pass
 
     '''
     Automata Management Methods (setters, getters, associated rewards)
