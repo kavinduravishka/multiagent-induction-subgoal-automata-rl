@@ -184,7 +184,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
-        interrupt_episode = [False]*self.num_agents
+        interrupt_episode = [False for _ in range(self.num_agents)]
 
         automaton_all_agents = self.automata[domain_id]
         merged_automaton_all_agents = self.merged_automata[domain_id]
