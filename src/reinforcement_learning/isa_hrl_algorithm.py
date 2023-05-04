@@ -608,6 +608,37 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         loss.backward()
         self.meta_optimizers[domain_id][task_id].step()
 
+    '''
+    Select bset candidate out of candidates in A star
+    '''
+    def _get_best_candidate_state_out_of_a_star_candidate(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        if self.is_tabular_case:
+            return self._get_best_candidate_state_out_of_a_star_candidate_for_tabular_meta_q_functions(domain_id, agent_id, task_id, current_state, action, candidate_states)
+        
+    def _get_best_candidate_state_out_of_a_star_candidate_for_tabular_meta_q_functions(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        automaton = self._get_merged_automaton(domain_id, agent_id)
+
+        selected_option_ids = []
+
+        for candidate_state in candidate_states:
+            if automaton.get_num_outgoing_edges(candidate_state) > 0:
+                selected_option_ids.append(automaton.get_outgoing_condition_id(candidate_state,  self._choose_egreedy_option(domain_id, agent_id, task_id, current_state, automaton, candidate_state)))
+            else:
+                selected_option_ids.append(action)
+
+        q_table = self.meta_q_functions[domain_id][agent_id][task_id]
+        
+        current_pairs = [(current_state, op_id) for op_id in selected_option_ids]
+
+        q_value_pairs = []
+        for i in range(len(selected_option_ids)):
+            q_value_pairs.append((candidate_state, q_table[candidate_states[i]][current_pairs[i]]))
+
+        f = lambda x : x[1]
+        q_value_pairs.sort(key = f)
+
+        return q_value_pairs[-1][0]
+
     def _get_one_hot_automaton_state(self, automaton, automaton_state): # FIX GPU baed function
         automaton_states = sorted(list(automaton.get_states()))
         automaton_state_v = np.zeros(len(automaton_states), dtype=np.float32)
