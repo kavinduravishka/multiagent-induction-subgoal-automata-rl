@@ -55,11 +55,11 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         self.update_all_policy_bank = utils.get_param(params, ISAAlgorithmHRL.UPDATE_ALL_POLICY_BANK, False)
 
         # option related structures
-        self.has_terminated = [[{}]*self.num_agents]*self.num_domains        # [domain_id][agent_id]{task_id} whether the option has terminated 
-        self.selected_option = [[{}]*self.num_agents]*self.num_domains       # [domain_id][agent_id]{task_id} option currently being executed 
-        self.last_state = [[{}]*self.num_agents]*self.num_domains            # [domain_id][agent_id]{task_id} state where the option started being executed 
-        self.num_option_steps = [[{}]*self.num_agents]*self.num_domains      # [domain_id][agent_id]{task_id} number of steps between the last option initiation and termination 
-        self.option_reward = [[{}]*self.num_agents]*self.num_domains
+        self.has_terminated = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]        # [domain_id][agent_id]{task_id} whether the option has terminated 
+        self.selected_option = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]       # [domain_id][agent_id]{task_id} option currently being executed 
+        self.last_state = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]            # [domain_id][agent_id]{task_id} state where the option started being executed 
+        self.num_option_steps = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]      # [domain_id][agent_id]{task_id} number of steps between the last option initiation and termination 
+        self.option_reward = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]
 
         # q-functions for selecting among options (policies over options)
         self.meta_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
@@ -208,8 +208,8 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         self.policy_bank_update_counter[agent_id][task_id][condition] = 0
 
     def _build_function_from_existing_condition(self, task_id, task, condition):
-        max_num_matchings = [1]*self.num_agents
-        max_conditions, max_conditions_updates = [[]]*self.num_agents, [[]]*self.num_agents
+        max_num_matchings = [1 for _ in range(self.num_agents)]
+        max_conditions, max_conditions_updates = [[] for _ in range(self.num_agents)], [[] for _ in range(self.num_agents)]
 
         # take the existing conditions in the policy bank with highest number of symbol matchings
         for agent_id in range(self.num_agents):
@@ -607,6 +607,37 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         self.meta_optimizers[domain_id][task_id].zero_grad()
         loss.backward()
         self.meta_optimizers[domain_id][task_id].step()
+
+    '''
+    Select bset candidate out of candidates in A star
+    '''
+    def _get_best_candidate_state_out_of_a_star_candidate(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        if self.is_tabular_case:
+            return self._get_best_candidate_state_out_of_a_star_candidate_for_tabular_meta_q_functions(domain_id, agent_id, task_id, current_state, action, candidate_states)
+        
+    def _get_best_candidate_state_out_of_a_star_candidate_for_tabular_meta_q_functions(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        automaton = self._get_merged_automaton(domain_id, agent_id)
+
+        selected_option_ids = []
+
+        for candidate_state in candidate_states:
+            if automaton.get_num_outgoing_edges(candidate_state) > 0:
+                selected_option_ids.append(automaton.get_outgoing_condition_id(candidate_state,  self._choose_egreedy_option(domain_id, agent_id, task_id, current_state, automaton, candidate_state)))
+            else:
+                selected_option_ids.append(action)
+
+        q_table = self.meta_q_functions[domain_id][agent_id][task_id]
+        
+        current_pairs = [(current_state, op_id) for op_id in selected_option_ids]
+
+        q_value_pairs = []
+        for i in range(len(selected_option_ids)):
+            q_value_pairs.append((candidate_state, q_table[candidate_states[i]][current_pairs[i]]))
+
+        f = lambda x : x[1]
+        q_value_pairs.sort(key = f)
+
+        return q_value_pairs[-1][0]
 
     def _get_one_hot_automaton_state(self, automaton, automaton_state): # FIX GPU baed function
         automaton_states = sorted(list(automaton.get_states()))

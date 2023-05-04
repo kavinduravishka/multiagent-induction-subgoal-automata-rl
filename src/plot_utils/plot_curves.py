@@ -7,11 +7,12 @@ from pandas.errors import EmptyDataError
 from tqdm import tqdm
 
 from reinforcement_learning.isa_base_algorithm import ISAAlgorithmBase
-from utils.utils import read_json_file
+from utils.utils import read_json_file, mkdir
 
 CONFIG_COLOUR_ATTR = "colour"
 CONFIG_FOLDERS_ATTR = "folders"
 CONFIG_LABEL_ATTR = "label"
+
 REWARD_IF_GOAL = 1.0
 
 
@@ -213,6 +214,7 @@ if __name__ == "__main__":
     num_tasks, num_runs, num_episodes, num_agents = args.num_tasks, args.num_runs, args.num_episodes, args.num_agents
     config_obj = read_json_file(args.config)
     output_filename_base, output_path = os.path.basename(args.config)[:-len(".json")], os.path.abspath(os.path.dirname(args.config))
+    mkdir(output_path)
     for agent_id in range(num_agents):
         total_rewards_sum, total_steps_sum, total_automaton_learning_episodes = process_tasks(config_obj, agent_id, num_tasks, num_runs,
                                                                                             num_episodes, args.max_episode_length,

@@ -382,6 +382,26 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                 self.target_net_update_counter[domain_id][agent_id][task_id][automaton_state_id[agent_id]] = 0
 
     '''
+    Select bset candidate out of candidates in A star
+    '''
+    def _get_best_candidate_state_out_of_a_star_candidate(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        if self.is_tabular_case:
+            return self._get_best_candidate_state_out_of_a_star_candidate_for_tabular_q_functions(domain_id, agent_id, task_id, current_state, action, candidate_states)
+        
+    def _get_best_candidate_state_out_of_a_star_candidate_for_tabular_q_functions(self, domain_id, agent_id, task_id, current_state, action, candidate_states):
+        automaton = self._get_merged_automaton(domain_id, agent_id)
+        candidate_state_ids = [automaton.get_state_id(cs) for cs in candidate_states]
+
+        q_table = self.q_functions[domain_id][agent_id][task_id]
+        current_pair = (current_state, action)
+        q_value_pairs = [(candidate_state_id, q_table[candidate_state_id][current_pair]) for candidate_state_id in candidate_state_ids]
+
+        f = lambda x : x[1]
+        q_value_pairs.sort(key =f)
+
+        return automaton.get_state_by_id(q_value_pairs[-1][0])
+
+    '''
     Reward Shaping Methods
     '''
     def _get_pseudoreward(self, automaton, from_automaton_state, to_automaton_state):
