@@ -170,5 +170,5 @@ src/task_decomposition_sharing
 # PDF files
 *.pdf
 
-**/plot_utils/*.png
-**/plot_utils/*.json
+**/plot_utils/**/*.png
+**/plot_utils/**/*.json
