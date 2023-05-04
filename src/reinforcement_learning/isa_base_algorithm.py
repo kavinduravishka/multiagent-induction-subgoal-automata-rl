@@ -319,7 +319,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
     def _share_automaton(self,domain_id, updated_automata):
         if self.shared_automata == None:
-            self.shared_automata = [[{}]*self.num_agents]*self.num_domains
+            self.shared_automata = [[{} for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         for i in range(len(updated_automata)):
             if updated_automata[i]:
@@ -329,7 +329,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _merge_automaton(self, domain_id):
         updated_merged_automaton = []
         if self.merged_automata == None:
-            self.merged_automata = [[None]*self.num_agents]*self.num_domains
+            self.merged_automata = [[None for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         for agent_id in range(self.num_agents):
             automatas_to_combine = [v for (k,v) in self.shared_automata[domain_id][agent_id].items()]
