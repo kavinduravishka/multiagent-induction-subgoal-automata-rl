@@ -167,7 +167,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
-        interrupt_episode = [False]*self.num_agents
+        interrupt_episode = [False for _ in range(self.num_agents)]
+
         automaton_all_agents = self.automata[domain_id]
 
         is_terminal = task.is_terminal()

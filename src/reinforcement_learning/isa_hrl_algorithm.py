@@ -55,11 +55,11 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         self.update_all_policy_bank = utils.get_param(params, ISAAlgorithmHRL.UPDATE_ALL_POLICY_BANK, False)
 
         # option related structures
-        self.has_terminated = [[{}]*self.num_agents]*self.num_domains        # [domain_id][agent_id]{task_id} whether the option has terminated 
-        self.selected_option = [[{}]*self.num_agents]*self.num_domains       # [domain_id][agent_id]{task_id} option currently being executed 
-        self.last_state = [[{}]*self.num_agents]*self.num_domains            # [domain_id][agent_id]{task_id} state where the option started being executed 
-        self.num_option_steps = [[{}]*self.num_agents]*self.num_domains      # [domain_id][agent_id]{task_id} number of steps between the last option initiation and termination 
-        self.option_reward = [[{}]*self.num_agents]*self.num_domains
+        self.has_terminated = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]        # [domain_id][agent_id]{task_id} whether the option has terminated 
+        self.selected_option = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]       # [domain_id][agent_id]{task_id} option currently being executed 
+        self.last_state = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]            # [domain_id][agent_id]{task_id} state where the option started being executed 
+        self.num_option_steps = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]      # [domain_id][agent_id]{task_id} number of steps between the last option initiation and termination 
+        self.option_reward = [[{} for _ in range(self.num_agents)] for _ in range (self.num_domains)]
 
         # q-functions for selecting among options (policies over options)
         self.meta_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
@@ -208,8 +208,8 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         self.policy_bank_update_counter[agent_id][task_id][condition] = 0
 
     def _build_function_from_existing_condition(self, task_id, task, condition):
-        max_num_matchings = [1]*self.num_agents
-        max_conditions, max_conditions_updates = [[]]*self.num_agents, [[]]*self.num_agents
+        max_num_matchings = [1 for _ in range(self.num_agents)]
+        max_conditions, max_conditions_updates = [[] for _ in range(self.num_agents)], [[] for _ in range(self.num_agents)]
 
         # take the existing conditions in the policy bank with highest number of symbol matchings
         for agent_id in range(self.num_agents):
