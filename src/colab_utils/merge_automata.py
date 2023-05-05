@@ -179,6 +179,7 @@ def _mergable(e1, e2, initial, accept, reject):
 def _set_automata_IAR_states(initial , accept , reject, new_automata:SubgoalAutomaton, state_mapping:dict):
     if new_automata.initial_state == None:
         assert state_mapping[(1, initial[0])] == state_mapping[(2, initial[1])]
+        new_automata.add_state(state_mapping[(1, initial[0])])
         new_automata.set_initial_state(state_mapping[(1, initial[0])])
     
     if new_automata.accept_state == None:
@@ -326,40 +327,40 @@ def _add_unmergable(e, automata_id, new_automata:SubgoalAutomaton, new_automaton
 if __name__ == "__main__":
     dfa1 = SubgoalAutomaton()
     dfa1.add_state("u0")
-    dfa1.add_state("u1")
+    # dfa1.add_state("u1")
     # dfa1.add_state("u2")
     # dfa1.add_state("uA")
     # dfa1.add_state("uR")
     dfa1.set_initial_state("u0")
-    dfa1.set_accept_state("uA")
-    dfa1.set_reject_state("uR")
+    # dfa1.set_accept_state("uA")
+    # dfa1.set_reject_state("uR")
 
-    dfa1.add_edge("u0", "u1", ["f", "~g"])
+    # dfa1.add_edge("u0", "u1", ["f", "~g"])
     # dfa1.add_edge("u0", "u2", ["4"])
     # dfa1.add_edge("u2", "uR", ["f", "~g"])
     # dfa1.add_edge("u0", "uA", ["f", "g"])
-    dfa1.add_edge("u0", "uR", ["n", "~f", "~g"])
-    dfa1.add_edge("u1", "uA", ["g"])
-    dfa1.add_edge("u1", "uR", ["n", "~g"])
+    # dfa1.add_edge("u0", "uR", ["n", "~f", "~g"])
+    # dfa1.add_edge("u1", "uA", ["g"])
+    # dfa1.add_edge("u1", "uR", ["n", "~g"])
 
     dfa1.plot(".","SA1.png")
 
     dfa2 = SubgoalAutomaton()
     dfa2.add_state("u0")
-    dfa2.add_state("u1")
-    dfa2.add_state("u2")
-    dfa2.add_state("uA")
-    dfa2.add_state("uR")
+    # dfa2.add_state("u1")
+    # dfa2.add_state("u2")
+    # dfa2.add_state("uA")
+    # dfa2.add_state("uR")
     dfa2.set_initial_state("u0")
-    dfa2.set_accept_state("uA")
-    dfa2.set_reject_state("uR")
+    # dfa2.set_accept_state("uA")
+    # dfa2.set_reject_state("uR")
 
-    dfa2.add_edge("u0", "u1", ["f", "~g"])
-    dfa2.add_edge("u0", "uA", ["h", "g"])
-    dfa2.add_edge("u0", "uR", ["h", "~f"])
-    dfa2.add_edge("u1", "uA", ["g"])
-    dfa2.add_edge("u1", "u2", ["h"])
-    dfa2.add_edge("u2", "uA", ["g"])
+    # dfa2.add_edge("u0", "u1", ["f", "~g"])
+    # dfa2.add_edge("u0", "uA", ["h", "g"])
+    # dfa2.add_edge("u0", "uR", ["h", "~f"])
+    # dfa2.add_edge("u1", "uA", ["g"])
+    # dfa2.add_edge("u1", "u2", ["h"])
+    # dfa2.add_edge("u2", "uA", ["g"])
 
     dfa2.plot(".","SA2.png")
 
