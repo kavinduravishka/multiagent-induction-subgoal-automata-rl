@@ -165,7 +165,7 @@ class LearningAlgorithm(ABC):
                 self._on_episode_change(previous_episode)
 
             # make a checkpoint
-            if self.checkpoint_enable and (not completed_episode or (previous_episode % self.checkpoint_frequency == 0)):
+            if self.checkpoint_enable and (not all(completed_episode) or (previous_episode % self.checkpoint_frequency == 0)):
                 self._make_checkpoint(previous_episode)
 
     @abstractmethod
@@ -180,8 +180,10 @@ class LearningAlgorithm(ABC):
                                    episode_length)
 
         # needed to log when an automaton is learned (see subclasses)
-        if not completed_episode:
-            self._on_incomplete_episode(self.current_domain_id)
+        if not all(completed_episode):
+            for agent_id in range(self.num_agents):
+                if not(completed_episode[agent_id]):
+                    self._on_incomplete_episode(self.current_domain_id, agent_id)
 
         # update next domain, task and episode to work with
         if self.num_domains > 1:
@@ -193,7 +195,7 @@ class LearningAlgorithm(ABC):
             self._update_task_and_episode_counters()
 
     @abstractmethod
-    def _on_incomplete_episode(self, current_domain_id):
+    def _on_incomplete_episode(self, current_domain_id, agent_id):
         pass
 
     def _on_episode_change(self, previous_episode):
