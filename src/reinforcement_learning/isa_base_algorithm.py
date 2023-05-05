@@ -106,6 +106,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # set of automata per domain
         self.automata = None
+        self.local_automata_queue = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
         self._set_automata(target_automata)
         # print("target_automata len :",len(target_automata))
         # print("target_automata [0] len :",len(target_automata[0]))
@@ -153,18 +154,22 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # get actual initial automaton state (performs verification that there is only one possible initial state!)
         current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
+
+        current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
+
         # update the automaton if the initial state achieves the goal and the example is not covered
         can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
 
         if self.interleaved_automaton_learning and any(can_learn_new_automaton):
             updated_automaton = self._perform_interleaved_automaton_learning(task, domain_id,
-                                                                             current_automaton_state,
+                                                                             current_succeeding_automaton_state,
                                                                              observation_history,
                                                                              compressed_observation_history,
                                                                              can_learn_new_automaton)
 
             if any(updated_automaton):  # get the actual initial state as done before
                 current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
+                current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False for _ in range(self.num_agents)]
@@ -195,14 +200,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 self._update_q_functions(task_id, current_state, actions, next_state, is_terminal, observations, observations_changed, terminated_agents)
 
             next_automaton_state = [self._get_next_automaton_state(self.automata[domain_id][agent_id], current_automaton_state[agent_id],
-                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)] 
+                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
+    
+            next_succeeding_automaton_states = [self._get_next_automaton_state(self.local_automata_queue[domain_id][agent_id][-1], current_succeeding_automaton_state[agent_id],
+                                                                observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
     
             # episode has to be interrupted if an automaton is learnt
             can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
 
 
             if not any(interrupt_episode) and self.interleaved_automaton_learning and any(can_learn_new_automaton):
-                interrupt_episode = self._perform_interleaved_automaton_learning(task, domain_id, next_automaton_state,
+                interrupt_episode = self._perform_interleaved_automaton_learning(task, domain_id, next_succeeding_automaton_states,
                                                                                 observation_history,
                                                                                 compressed_observation_history,
                                                                                 can_learn_new_automaton)
@@ -218,9 +226,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
             # update current environment and automaton states and increase episode length
             current_state = next_state
             current_automaton_state = next_automaton_state
+            current_succeeding_automaton_state = next_succeeding_automaton_states
             episode_length = [episode_length[i] + 1* (not terminated_agents[i]) for i in range(self.num_agents)]
 
-        completed_episode = not any(interrupt_episode)
+        completed_episode = [not ie for ie in interrupt_episode]
 
 
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
@@ -291,6 +300,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # print("Self.automata :",self.automata)
         return self.automata[domain_id][agent_id]
 
+    def _get_succeeding_automaton(self, domain_id,agent_id):
+        return self.local_automata_queue[domain_id][agent_id][-1]
+
     def _get_next_automaton_state(self, automaton, current_automaton_state, observations, observations_changed):
         # automaton has to be navigated with compressed traces if specified (just when a change occurs)
         if observations == None:
@@ -306,6 +318,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 automaton_state_successors_all_agents.append(None)
                 continue
             automaton = self._get_automaton(domain_id, agent_id)
+            initial_state = automaton.get_initial_state()
+            automaton_state_successors_all_agents.append(self._get_next_automaton_state(automaton, initial_state, observations[agent_id], True))
+        return automaton_state_successors_all_agents
+
+    def _get_initial_succeeding_automaton_state_successors(self, domain_id, observations, updated_automaton):
+        automaton_state_successors_all_agents = []
+        for agent_id in range(self.num_agents):
+            if not updated_automaton[agent_id]:
+                automaton_state_successors_all_agents.append(None)
+                continue
+            automaton = self._get_succeeding_automaton(domain_id, agent_id)
             initial_state = automaton.get_initial_state()
             automaton_state_successors_all_agents.append(self._get_next_automaton_state(automaton, initial_state, observations[agent_id], True))
         return automaton_state_successors_all_agents
@@ -348,7 +371,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _set_basic_automata(self):
         self.automata = []
 
-        for _ in range(self.num_domains):
+        for domain_id in range(self.num_domains):
             # the initial automaton is an automaton that doesn't accept nor reject anything
             automatas_all_agents = []
             for j in range(self.num_agents):
@@ -361,6 +384,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 # automaton.set_reject_state(ISAAlgorithm.REJECTING_STATE_NAME)
                 automatas_all_agents.append(automaton)
             self.automata.append(automatas_all_agents)
+
+            for agent_id in range(self.num_agents):
+                self.local_automata_queue[domain_id][agent_id].append(automatas_all_agents[agent_id])
 
     '''
     Automata Learning Methods (example update, task generation/solving/parsing)
@@ -410,7 +436,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 out_all_agents.append(False)
                 continue
             
-            automaton = self.automata[domain_id][agent_id]
+            automaton = self.local_automata_queue[domain_id][agent_id][-1]
 
             if task.is_terminal()[agent_id]:
                 if task.is_goal_achieved()[agent_id]:
@@ -465,7 +491,13 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 candidate_automaton.set_initial_state(ISAAlgorithmBase.INITIAL_STATE_NAME)
                 candidate_automaton.set_accept_state(ISAAlgorithmBase.ACCEPTING_STATE_NAME)
                 candidate_automaton.set_reject_state(ISAAlgorithmBase.REJECTING_STATE_NAME)
-                self.automata[domain_id][agent_id] = candidate_automaton
+                if len(self.local_automata_queue[domain_id][agent_id]) < self.local_auotomata_queue_size + 1:
+                    self.local_automata_queue[domain_id][agent_id].append(candidate_automaton)
+                    self.automata[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][0]
+                else:
+                    self.local_automata_queue[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][1:]
+                    self.local_automata_queue[domain_id][agent_id].append(candidate_automaton)
+                    self.automata[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][0]
 
                 # plot the new automaton
                 candidate_automaton.plot(self.get_automaton_plot_folder(domain_id, agent_id),
