@@ -120,7 +120,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         # keep track of the number of learnt automata per domain
         self.automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
-        self.automaton_learning_episodes = [[] for _ in range(self.num_domains)]
+        self.automaton_learning_episodes = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
             utils.rm_dirs(self.get_automaton_task_folders())
@@ -240,9 +240,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self.max_episode_length = int(min(self.initial_max_episode_length + episode_length_increase, self.final_max_episode_length))
         super()._on_episode_change(previous_episode)
 
-    def _on_incomplete_episode(self, current_domain_id):
+    def _on_incomplete_episode(self, current_domain_id, agent_id):
         # if the episode was interrupted, log the learning episode
-        self.automaton_learning_episodes[current_domain_id].append(self.current_episode)
+        self.automaton_learning_episodes[current_domain_id][agent_id].append(self.current_episode)
 
     @abstractmethod
     def _choose_action(self, domain_id, task_id, current_state, automaton, current_automaton_state):
@@ -579,7 +579,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 automaton_learning_ep_folder = self.get_automaton_learning_episodes_folder(domain_id)
                 utils.mkdir(automaton_learning_ep_folder)
                 with open(self.get_automaton_learning_episodes_file(domain_id, agent_id), 'w') as f:
-                    for episode in self.automaton_learning_episodes[domain_id]:
+                    for episode in self.automaton_learning_episodes[domain_id][agent_id]:
                         f.write(str(episode) + '\n')
 
     '''
