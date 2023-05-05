@@ -125,13 +125,15 @@ def get_reward_steps_sums_for_setting(agent_id, task_id, setting, max_episode_le
             task_rewards += rewards[:num_episodes]
             task_steps += steps[:num_episodes]
             try:
-                automaton_learning_episodes_path = os.path.join(folder, ISAAlgorithmBase.AUTOMATON_LEARNING_EPISODES_FILENAME)
+                automaton_learning_episodes_path = os.path.join(folder, ISAAlgorithmBase.AUTOMATON_LEARNING_EPISODES_FILENAME % agent_id)
                 task_automaton_learning_episodes.extend(read_automaton_learning_episodes(automaton_learning_episodes_path))
             except (IOError, EmptyDataError):
                 pass  # the automaton learning episodes file does not exist
         else:
             print("Error: The number of episodes in {} is less than {}. Rewards are set to 0, and steps to the maximum "
                   "episode length.".format(rewards_steps_log_file, num_episodes))
+            
+    print("DEBUG : task_rewards, task_steps, task_automaton_learning_episodes :", task_rewards, task_steps, task_automaton_learning_episodes)
 
     return task_rewards, task_steps, task_automaton_learning_episodes
 
@@ -222,6 +224,7 @@ if __name__ == "__main__":
                                                                                             args.plot_task_curves,
                                                                                             args.window_size, args.plot_title,
                                                                                             output_filename_base, output_path)
+        print("DEBUG :", total_automaton_learning_episodes)
         plot_average_task_curves(config_obj, agent_id, num_tasks, num_runs, args.max_episode_length, args.window_size, args.plot_title,
                                 total_rewards_sum, total_steps_sum, total_automaton_learning_episodes, output_filename_base,
                                 output_path)
