@@ -465,6 +465,15 @@ class ISAAlgorithmBase(LearningAlgorithm):
         candidate_states = a_star_automaton.get_next_automaton_states(reward, observations, a_star_edge_q_function, a_star_state_q_function, terminated)
         return candidate_states
     
+    def _get_next_A_star_merged_automaton_state_without_updating(self, a_star_automaton: AstarSearch, current_automaton_state, 
+                                                observations, observations_changed):
+        if observations == None:
+            return [None]
+        if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+            return [current_automaton_state]
+        candidate_states = a_star_automaton.get_next_automaton_states_without_updating(observations)
+        return candidate_states
+    
     def _get_initial_A_star_merged_automaton_state(self, domain_id, task_id, observations, updated_automaton):
         automaton_state_successor_candidates = []
         for agent_id in range(self.num_agents):
