@@ -1,3 +1,4 @@
+# file:///home/kavin/Documents/FYP/FYP_code/multiagent-induction-subgoal-automata-rl/src/reinforcement_learning/isa_qrm_algorithm.py {"mtime":1683441184332,"ctime":1683314044506,"size":32182,"etag":"3ah4cqngd12f4","orphaned":false,"typeId":""}
 import collections
 import os
 import numpy as np
@@ -399,7 +400,10 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         f = lambda x : x[1]
         q_value_pairs.sort(key =f)
 
-        return automaton.get_state_by_id(q_value_pairs[-1][0])
+        try:
+            return automaton.get_state_by_id(q_value_pairs[-1][0])
+        except IndexError as e:
+            print("DEBUG :", )
 
     '''
     Reward Shaping Methods
@@ -438,12 +442,19 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         else:
             self._reset_q_function_for_specific_agent(domain_id, agent_id)
 
-    def _on_merged_automaton_learned(self, domain_id, agent_id = None):
+    def _on_merged_automaton_learned(self, domain_id, agent_id = None, updated_automaton = None):
         # the previous q-functions are not valid anymore since the automata structure has changed, so we reset them
-        if agent_id==None:
+        if agent_id==None and updated_automaton == None:
             self._reset_q_functions(domain_id)
+            # self._reset_A_star_state_q_functions(domain_id)
+        elif agent_id == None:
+            for i in range(self.num_agents):
+                if updated_automaton[i]:
+                    self._reset_q_function_for_specific_agent(domain_id, i)
+                    # self._reset_A_star_state_q_functions_for_specific_agent(domain_id, i)
         else:
             self._reset_q_function_for_specific_agent(domain_id, agent_id)
+            # self._reset_A_star_state_q_functions_for_specific_agent(domain_id, agent_id)
 
     def _reset_q_function_for_specific_agent(self, domain_id, agent_id):
         if self.is_tabular_case:

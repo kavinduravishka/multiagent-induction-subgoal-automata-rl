@@ -1,3 +1,4 @@
+# file:///home/kavin/Documents/FYP/FYP_code/multiagent-induction-subgoal-automata-rl/src/reinforcement_learning/isa_hrl_algorithm.py {"mtime":1683626349542,"ctime":1683314044506,"size":57759,"etag":"3ahddks6k1t36","orphaned":false,"typeId":""}
 import collections
 import numpy as np
 import os
@@ -810,13 +811,21 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             self._reset_q_functions_for_specific_agent(domain_id, agent_id)
             self._reset_meta_experience_replay_for_specific_agent(domain_id, agent_id)
 
-    def _on_merged_automaton_learned(self, domain_id, agent_id = None):
-        if agent_id == None:
+    def _on_merged_automaton_learned(self, domain_id, agent_id = None, updated_automaton = None):
+        if agent_id == None and updated_automaton == None:
             self._reset_q_functions(domain_id)
             self._reset_meta_experience_replay(domain_id)
+            # self._reset_A_star_edge_q_functions(domain_id)
+        elif agent_id == None:
+            for i in range(self.num_agents):
+                if updated_automaton[i]:
+                    self._reset_q_functions_for_specific_agent(domain_id, i)
+                    self._reset_meta_experience_replay_for_specific_agent(domain_id, i)
+                    # self._reset_A_star_edge_q_functions_for_specific_agent(domain_id, i)
         else:
             self._reset_q_functions_for_specific_agent(domain_id, agent_id)
             self._reset_meta_experience_replay_for_specific_agent(domain_id, agent_id)
+            # self._reset_A_star_edge_q_functions_for_specific_agent(domain_id, agent_id)
 
     def _reset_q_functions(self, domain_id):
         """Rebuild Q-functions when an automaton is learned."""
