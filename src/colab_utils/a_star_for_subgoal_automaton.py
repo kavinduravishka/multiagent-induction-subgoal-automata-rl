@@ -96,7 +96,6 @@ class AstarSearch:
                         raise e
 
                 a_star_edge_q_function[(from_state, condition, to_state)]["q_value"] += self.learning_rate * (delta - self.target_a_star_edge_q_function[(from_state, condition, to_state)]["q_value"])
-        
 
         self.a_star_edge_q_function = dc(a_star_edge_q_function)
 
@@ -115,10 +114,12 @@ class AstarSearch:
             self.target_a_star_state_q_function = dc(a_star_state_q_function)
 
         self._update_candidate_states_and_q_functions(reward, observations, a_star_edge_q_function, terminated)
-        # self._update_a_star_state_q_function()
 
-        # self._update_distance_from_init(observations, terminated)
         return self._get_best_states()
+    
+    def get_next_automaton_states_without_updating(self, observations):
+        copy_discovered_state_distance_to_accept = self._update_copy_candidate_states(observations)
+        return self._get_future_best_states(copy_discovered_state_distance_to_accept)
     
 
     def _update_a_star_state_q_function(self):
@@ -142,22 +143,12 @@ class AstarSearch:
                 square_sum_q_value += values["q_value"]**2 #* values["steps"]
                 sum_q_value += values["q_value"]
 
-            # if sum_steps == 0:
-            #     sum_steps = 1
-
             try:
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value/sum_q_value - self.a_star_state_q_function[state])
             except ZeroDivisionError:
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value - self.a_star_state_q_function[state])
 
-        # print("DEBUG :", self.a_star_edge_q_function)
 
-
-    def get_next_automaton_states_without_updating(self,observations):
-        copy_discovered_state_distance_to_accept = self._update_copy_candidate_states(observations)
-        # copy_distance_from_init = self._update_copy_distance_from_init(copy_discovered_state_distance_to_accept, observations)
-        return self._get_future_best_states(copy_discovered_state_distance_to_accept)
-    
     def get_current_automaton_states(self):
         return self._get_best_states()
     
@@ -357,6 +348,3 @@ class AstarSearch:
     
     def plot(self):
         self.automaton.plot("/tmp","next_state_wrong_pred.png")
-
-    # def get_last_obs(self):
-    #     return self.last_obs
