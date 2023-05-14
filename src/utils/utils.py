@@ -51,6 +51,9 @@ def sort_by_ord(input_list):
 def randargmax(input_vector):
     return np.random.choice(np.flatnonzero(input_vector == np.max(input_vector)))
 
+def randargmin(input_vector):
+    return np.random.choice(np.flatnonzero(input_vector == np.min(input_vector)))
+
 
 def read_json_file(filepath):
     with open(filepath) as f:
