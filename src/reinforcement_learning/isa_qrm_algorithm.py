@@ -245,18 +245,19 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                     continue
             task = self._get_task(domain_id, task_id)
             automaton = self._get_merged_automaton(domain_id, agent_id)
-            A_star_automaton = self._get_A_star_automaton(domain_id, agent_id)
+            # A_star_automaton = self._get_A_star_automaton(domain_id, agent_id)
             q_table = self._get_q_function(domain_id, agent_id, task_id)
 
             for automaton_state in automaton.get_states():
                 automaton_state_id = automaton.get_state_id(automaton_state)
 
-                # next_automaton_state = self._get_next_automaton_state(automaton, automaton_state, observations, observations_changed)
-                next_merged_automaton_state_candidates = self._get_next_A_star_merged_automaton_state_without_updating(A_star_automaton, automaton_state, observations,
-                                                                                                     observations_changed)
+                next_automaton_state = self._get_next_automaton_state(automaton, automaton_state, observations, observations_changed)
+
+                # next_merged_automaton_state_candidates = self._get_next_A_star_merged_automaton_state_without_updating(A_star_automaton, automaton_state, observations,
+                #                                                                                      observations_changed)
                 
-                next_automaton_state = self._get_best_candidate_state_out_of_a_star_candidate(domain_id, agent_id, task_id, current_pair[0],
-                                                                                                  current_pair[1], next_merged_automaton_state_candidates)
+                # next_automaton_state = self._get_best_candidate_state_out_of_a_star_candidate(domain_id, agent_id, task_id, current_pair[0],
+                #                                                                                   current_pair[1], next_merged_automaton_state_candidates)
 
                 next_automaton_state_id = automaton.get_state_id(next_automaton_state)
                 

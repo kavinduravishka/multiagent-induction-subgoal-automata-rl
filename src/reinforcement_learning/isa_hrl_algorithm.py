@@ -428,6 +428,8 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             return self._get_random_action(task)
 
         # if the current automaton has terminated it means we have to select a new option to run
+        # print("DEBUG ===========================")
+        # print("DEBUG : has_terminated :", self.has_terminated[domain_id][agent_id][task_id])
         if self.has_terminated[domain_id][agent_id][task_id]:
             self.has_terminated[domain_id][agent_id][task_id] = False
             self.selected_option[domain_id][agent_id][task_id] = self._choose_egreedy_option(domain_id, agent_id, task_id, current_state,
@@ -437,8 +439,15 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
             self.option_reward[domain_id][agent_id][task_id] = 0
 
         option = self.selected_option[domain_id][agent_id][task_id]
+        # print("DEBUG : selected _option :", option)
+        # print("DEBUG : _choose_egreedy_action : automaton.get_num_outgoing_edges(current_automaton_state) :",automaton.get_num_outgoing_edges(current_automaton_state))
+        
         if automaton.get_num_outgoing_edges(current_automaton_state) > 0:
+            # print("DEBUG : returning action :", self._choose_egreedy_action(task, current_state, self.policy_bank[agent_id][task_id][option]))
+            # print("DEBUG ===========================")
             return self._choose_egreedy_action(task, current_state, self.policy_bank[agent_id][task_id][option])
+        # print("DEBUG : returning action :", option)
+        # print("DEBUG ===========================")
         return option  # it is a primitive action
 
     def _choose_egreedy_option(self, domain_id, agent_id, task_id, current_state, automaton, automaton_state):
@@ -450,6 +459,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
         return self._get_greedy_option(domain_id, agent_id, task_id, current_state, automaton, automaton_state)
 
     def _get_random_option(self, domain_id, agent_id, task_id, automaton, automaton_state):
+        # print("DEBUG : _get_random_option : automaton.get_num_outgoing_edges(current_automaton_state) :",automaton.get_num_outgoing_edges(automaton_state))
         if automaton.get_num_outgoing_edges(automaton_state) > 0:
             return random.choice(automaton.get_outgoing_conditions(automaton_state))
         else:
@@ -465,12 +475,16 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
     def _get_greedy_option_tabular(self, domain_id, agent_id, task_id, current_state, automaton, current_automaton_state):
         meta_q_function = self.meta_q_functions[domain_id][agent_id][task_id]
 
+        # print("DEBUG : _get_greedy_option_tabular : automaton.get_num_outgoing_edges(current_automaton_state) :",automaton.get_num_outgoing_edges(current_automaton_state))
         if automaton.get_num_outgoing_edges(current_automaton_state) > 0:
             available_options = automaton.get_outgoing_conditions(current_automaton_state)
+            # print("DEBUG : available_options :", available_options)
         else:
             available_options = [i for i in range(self._get_task(domain_id, task_id).action_space.n)]
+            # print("DEBUG : available_options :", available_options)
 
         q_values = [meta_q_function[current_automaton_state][(current_state, option)] for option in range(len(available_options))]
+        # print("DEBUG : q_values :", q_values)
         return available_options[utils.randargmax(q_values)]
 
     def _get_greedy_option_deep(self, domain_id, agent_id, task_id, current_state, automaton, current_automaton_state):
@@ -493,7 +507,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
     def _on_performed_step(self, domain_id, task_id, next_state, reward, is_terminal, observations, automaton,
                            current_automaton_state, next_automaton_state, episode_length):
         for agent_id in range(self.num_agents):
-            if self.interleaved_automaton_learning and not self.has_observed_goal_example[domain_id][agent_id]:
+            if (self.interleaved_automaton_learning and not self.has_observed_goal_example[domain_id][agent_id]):
                 continue
 
             # update option attributes
@@ -504,6 +518,9 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
                                                     or current_automaton_state[agent_id] != next_automaton_state[agent_id] \
                                                     or is_terminal[agent_id] \
                                                     or episode_length[agent_id] >= self.max_episode_length - 1
+            
+            if not self._is_immediate_following_state(domain_id, agent_id, current_automaton_state[agent_id], next_automaton_state[agent_id]):
+                continue
 
             if self.train_model:
                 if self.has_terminated[domain_id][agent_id][task_id]:  # if the option terminates, the metacontroller is updated
