@@ -121,11 +121,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.shared_automata = None
         self.local_automata_queue = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
         
-        self.a_star_edge_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
-        self.target_a_star_edge_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        # self.a_star_edge_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        # self.target_a_star_edge_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
-        self.a_star_state_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
-        self.target_a_star_state_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        # self.a_star_state_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        # self.target_a_star_state_q_functions = [[[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+
+        self.a_star_edge_q_functions = [[{} for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.target_a_star_edge_q_functions = [[{} for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+
+        self.a_star_state_q_functions = [[{} for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.target_a_star_state_q_functions = [[{} for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         self._set_automata(target_automata)
         self._set_merged_automata(target_automata)
@@ -293,7 +299,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
         completed_episode = [not ie for ie in interrupt_episode]
 
         # try:
-        #     print("DEBUG :", self.is_same_true_count, self.is_immediate_true_count, self.is_immediate_false_count)
+            # print("DEBUG 1.0 :", self.is_same_true_count, self.is_immediate_true_count, self.is_immediate_false_count)
+        #     pass
         # except AttributeError:
         #     pass
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
@@ -301,24 +308,21 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _is_immediate_following_state(self, domain_id, agent_id, current_merged_automaton_state, next_merged_automaton_state):
         merged_automaton:SubgoalAutomaton = self._get_merged_automaton(domain_id, agent_id)
         if current_merged_automaton_state == next_merged_automaton_state:
-            # print("DEBUG : TRUE : SAME :", current_merged_automaton_state, next_merged_automaton_state)
-            # try:
-            #     self.is_same_true_count += 1
-            # except AttributeError:
-            #     self.is_same_true_count = 1
+            try:
+                self.is_same_true_count += 1
+            except AttributeError:
+                self.is_same_true_count = 1
             return True
         if next_merged_automaton_state in merged_automaton.get_outgoing_to_states(current_merged_automaton_state):
-            # print("DEBUG : TRUE : DIFFERENT :", current_merged_automaton_state, next_merged_automaton_state)
-            # try:
-            #     self.is_immediate_true_count += 1
-            # except AttributeError:
-            #     self.is_immediate_true_count = 1
+            try:
+                self.is_immediate_true_count += 1
+            except AttributeError:
+                self.is_immediate_true_count = 1
             return True
-        # print("DEBUG : FALSE : not immediate :", current_merged_automaton_state, next_merged_automaton_state)
-        # try:
-        #     self.is_immediate_false_count += 1
-        # except AttributeError:
-        #     self.is_immediate_false_count = 1
+        try:
+            self.is_immediate_false_count += 1
+        except AttributeError:
+            self.is_immediate_false_count = 1
         return False
 
     
@@ -328,8 +332,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 continue
             else:
                 a_star_automaton:AstarSearch = self._get_A_star_automaton(domain_id, agent_id)
-                self.target_a_star_edge_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_edge_q_functions(reward, is_terminal, self.target_a_star_edge_q_functions[domain_id][agent_id][task_id])
-                self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_state_q_functions(self.target_a_star_state_q_functions[domain_id][agent_id][task_id])
+                # self.target_a_star_edge_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_edge_q_functions(reward[agent_id], is_terminal[agent_id], self.target_a_star_edge_q_functions[domain_id][agent_id][task_id])
+                # self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_state_q_functions(self.target_a_star_state_q_functions[domain_id][agent_id][task_id])
+                self.target_a_star_edge_q_functions[domain_id][agent_id] = a_star_automaton.update_a_star_edge_q_functions(reward[agent_id], is_terminal[agent_id], self.target_a_star_edge_q_functions[domain_id][agent_id])
+                self.target_a_star_state_q_functions[domain_id][agent_id] = a_star_automaton.update_a_star_state_q_functions(self.target_a_star_state_q_functions[domain_id][agent_id])
 
 
     def _update_a_star_tree(self, domain_id, observations, observations_changed, terminated_agents):
@@ -542,10 +548,15 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self._build_domain_A_star_edge_q_functions(domain_id)
 
     def _build_domain_A_star_edge_q_functions(self, domain_id, updated_automaton = None):
+        # if self.a_star_edge_q_functions[domain_id] == None:
+        #     self.a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+        # if self.target_a_star_edge_q_functions[domain_id] == None:
+        #     self.target_a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+
         if self.a_star_edge_q_functions[domain_id] == None:
-            self.a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+            self.a_star_edge_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
         if self.target_a_star_edge_q_functions[domain_id] == None:
-            self.target_a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+            self.target_a_star_edge_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
 
         if updated_automaton == None:
             for agent_id in range(self.num_agents):
@@ -558,8 +569,11 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self._build_domain_A_star_edge_q_functions_for_specific_agent(domain_id, i)
 
     def _build_domain_A_star_edge_q_functions_for_specific_agent(self, domain_id, agent_id):
-        self.a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
-        self.target_a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+        # self.a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+        # self.target_a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+
+        self.a_star_edge_q_functions[domain_id][agent_id] = {}
+        self.target_a_star_edge_q_functions[domain_id][agent_id] = {}
 
         automaton:SubgoalAutomaton = self._get_merged_automaton(domain_id, agent_id)
 
@@ -571,10 +585,15 @@ class ISAAlgorithmBase(LearningAlgorithm):
             outgoing_edges = automaton.get_outgoing_edges(state)
             
             for (condition, to_state) in outgoing_edges:
-                for task_id in range(self.num_tasks):
-                    if (state, condition, to_state) not in self.a_star_edge_q_functions[domain_id][agent_id][task_id].keys():
-                        self.a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
-                        self.target_a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
+                # for task_id in range(self.num_tasks):
+                #     if (state, condition, to_state) not in self.a_star_edge_q_functions[domain_id][agent_id][task_id].keys():
+                #         self.a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
+                #         self.target_a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
+
+
+                if (state, condition, to_state) not in self.a_star_edge_q_functions[domain_id][agent_id].keys():
+                    self.a_star_edge_q_functions[domain_id][agent_id][(state, condition, to_state)] = 0
+                    self.target_a_star_edge_q_functions[domain_id][agent_id][(state, condition, to_state)] = 0
             
                 if to_state not in visited and to_state not in discovered:
                     discovered.append(to_state)
@@ -599,10 +618,15 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self._build_domain_A_star_state_q_functions(domain_id)
 
     def _build_domain_A_star_state_q_functions(self, domain_id, updated_automaton = None):
+        # if self.a_star_state_q_functions[domain_id] == None:
+        #     self.a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+        # if self.target_a_star_state_q_functions[domain_id] == None:
+        #     self.target_a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+
         if self.a_star_state_q_functions[domain_id] == None:
-            self.a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+            self.a_star_state_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
         if self.target_a_star_state_q_functions[domain_id] == None:
-            self.target_a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
+            self.target_a_star_state_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
 
         if updated_automaton == None:
             for agent_id in range(self.num_agents):
@@ -615,16 +639,24 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self._build_domain_A_star_state_q_functions_for_specific_agent(domain_id, i)
 
     def _build_domain_A_star_state_q_functions_for_specific_agent(self, domain_id, agent_id):
-        self.a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
-        self.target_a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+        # self.a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+        # self.target_a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
+
+        self.a_star_state_q_functions[domain_id][agent_id] = {}
+        self.target_a_star_state_q_functions[domain_id][agent_id] = {}
+
 
         automaton:SubgoalAutomaton = self._get_merged_automaton(domain_id, agent_id)
 
         all_states = automaton.get_states()
 
-        for task_id in range(self.num_tasks):
-            self.a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
-            self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
+        # for task_id in range(self.num_tasks):
+        #     self.a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
+        #     self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
+
+        self.a_star_state_q_functions[domain_id][agent_id]= {state:0 for state in all_states}
+        self.target_a_star_state_q_functions[domain_id][agent_id] = {state:0 for state in all_states}
+
             
 
     '''
@@ -643,6 +675,14 @@ class ISAAlgorithmBase(LearningAlgorithm):
         if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
             return current_automaton_state
         return automaton.get_next_state(current_automaton_state, observations)
+    
+    def _get_all_next_automaton_states(self, automaton:SubgoalAutomaton, current_automaton_state, observations, observations_changed):
+        # automaton has to be navigated with compressed traces if specified (just when a change occurs)
+        if observations == None:
+            return None
+        if (self.ignore_empty_observations and len(observations) == 0) or (self.use_compressed_traces and not observations_changed):
+            return [current_automaton_state]
+        return automaton.get_all_satisfying_states(current_automaton_state, observations)
 
     def _get_initial_automaton_state_successors(self, domain_id, observations, updated_automaton):
         automaton_state_successors_all_agents = []
