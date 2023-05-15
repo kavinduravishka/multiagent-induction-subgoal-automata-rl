@@ -62,6 +62,8 @@ class AstarSearch:
         else:
             distance = self.automaton.get_distance(self.initial_state, self.accept_state, "min_distance")
         self.discovered_state_distance_to_accept = [(self.initial_state, distance)]
+
+        self.discovered_state_distance_from_init = [(self.initial_state, 0)]
         # self.distance_from_init = [(self.initial_state, 0)]
 
         self.tt_root = TransitionNode(self.initial_state)
@@ -101,6 +103,7 @@ class AstarSearch:
                 if child_state not in self.discovered_states and child_state not in newly_discovered_states:
                     newly_discovered_states.append(child_state) 
                     self._update_distance_to_accept(child_state)
+                    self._update_distance_from_init(child_state)
 
         self.discovered_states += newly_discovered_states
 
@@ -128,7 +131,8 @@ class AstarSearch:
         self.a_star_edge_q_function = target_a_star_edge_q_function
         self.target_a_star_edge_q_function = target_a_star_edge_q_function
 
-        if not is_terminal:
+        if not is_terminal or reward != 1.0:
+            # print("DEBUG 1.0 : reward :", reward)
             return dc(self.a_star_edge_q_function)
 
         # Update edge q values up the transition tree
@@ -137,15 +141,26 @@ class AstarSearch:
 
         for state in self.discovered_states:
             for node in self.state_transition_node_mapping[state]:
-                if node.children == [] or node.children == None:
+                if node.children == [] or node.children == None: # and node.state == self.accept_state:
                     leaves.append(node)
 
-        # print("DEBUG : leaves :",[l.state for l in leaves])
+        leaves.sort(key= lambda x : self._get_branch_depth(x))
+
+        if self.accept_state != None:
+            max_depth = self.automaton.get_distance(self.initial_state, self.accept_state, "min_distance")
+        else:
+            max_depth = self._get_branch_depth(leaves[-1])
 
         for leaf in leaves:
-            leaf_to_root_depth = 1
+            # if self._get_branch_depth(leaf) != max_depth:
+            #     continue
+
+            
             parent = leaf.parent
             while parent != None:
+                leaf_to_root_depth = self._get_branch_depth(leaf)
+
+                factor = max([0, (max_depth - leaf_to_root_depth)]) + 1
                 
                 to_state = leaf.state
                 condition = leaf.parent_edge.condition
@@ -154,18 +169,22 @@ class AstarSearch:
                 sos_tuple = (from_state, condition, to_state)
 
                 if to_state == self.accept_state and reward == 1.0:
-                    self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** leaf_to_root_depth * (1 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                    self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (1 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
                 elif to_state == self.reject_state:
                     pass
                 else:
                     if len(leaf.children_edges) > 0:
                         child_edge_q_value_sum = 0
+                        child_edge_q_value_square_sum = 0
                         child_edges = leaf.children_edges
                         for c_edge in child_edges:
                             c_sos_tuple = (leaf.state, c_edge.condition, c_edge.state)
                             child_edge_q_value_sum += self.target_a_star_edge_q_function[c_sos_tuple]
-                        # print("DEBUG : parent :", parent.state, ": parent.steps_after_taken_edge[condition] :", parent.steps_after_taken_edge[condition])
-                        self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** leaf_to_root_depth * (child_edge_q_value_sum/len(leaf.children_edges) - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                            child_edge_q_value_square_sum += self.target_a_star_edge_q_function[c_sos_tuple] ** 2
+                        try:
+                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (child_edge_q_value_square_sum/child_edge_q_value_sum - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                        except ZeroDivisionError:
+                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (0 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
                     else:
                         pass
                 
@@ -173,7 +192,16 @@ class AstarSearch:
                 leaf = leaf.parent
                 leaf_to_root_depth += 1
 
+        # print("DEBUG : self.a_star_edge_q_function :",self.a_star_edge_q_function)
         return dc(self.a_star_edge_q_function)
+    
+    def _get_branch_depth(self, leaf):
+        depth = 0
+        while leaf.parent != None:
+            depth += 1
+            leaf = leaf.parent
+
+        return depth
 
     def update_a_star_state_q_functions(self, target_a_star_state_q_function):
         self.a_star_state_q_function = target_a_star_state_q_function
@@ -202,10 +230,12 @@ class AstarSearch:
                 sum_q_value += value
 
             try:
+                # print("DEBUG : updated state q")
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value/sum_q_value - self.target_a_star_state_q_function[state])
             except ZeroDivisionError:
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value - self.target_a_star_state_q_function[state])
 
+        # if sum(self.a_star_state_q_function.values()) > 0.0:self.a_star_state_q_function.values()))
         return dc(self.a_star_state_q_function)
 
 
@@ -221,6 +251,12 @@ class AstarSearch:
         if (state,next_value) not in self.discovered_state_distance_to_accept:
             self.discovered_state_distance_to_accept.append((state,next_value))
     
+    def _update_distance_from_init(self, state):
+        next_value = self.automaton.get_distance(self.initial_state, state, "max_distance")
+
+        if (state,next_value) not in self.discovered_state_distance_to_accept:
+            self.discovered_state_distance_from_init.append((state,next_value))
+
     def get_current_automaton_states(self, current_automaton_state):
         return self._get_best_states(current_automaton_state)
     
@@ -254,6 +290,8 @@ class AstarSearch:
             visited.append(state)
 
         self.target_a_star_edge_q_function = dc(self.a_star_edge_q_function)
+
+
 
             
 ############################################################################################################################################
@@ -421,6 +459,7 @@ class AstarSearch:
 
     def _get_best_states(self, current_automaton_state):
         f = lambda x : x[1]
+        self.discovered_state_distance_from_init.sort(key = f)
         self.discovered_state_distance_to_accept.sort(key = f)
 
         if self.discovered_state_distance_to_accept[0][0] == self.accept_state:
@@ -435,16 +474,16 @@ class AstarSearch:
                 if node.children == [] or node.children == None:
                     leaves.append(node)
 
-        min_dist_to_acc = self.discovered_state_distance_to_accept[0][1]
+        max_dist_from_init = self.discovered_state_distance_from_init[-1][1]
 
-        if (current_automaton_state, min_dist_to_acc) in self.discovered_state_distance_to_accept:
+        if (current_automaton_state, max_dist_from_init) in self.discovered_state_distance_from_init:
             return [current_automaton_state]
-        elif any((child_state, min_dist_to_acc) in self.discovered_state_distance_to_accept for child_state in self.automaton.get_outgoing_to_states(current_automaton_state)):
+        elif any((child_state, max_dist_from_init) in self.discovered_state_distance_from_init for child_state in self.automaton.get_outgoing_to_states(current_automaton_state)):
             child_nodes_in_tt = []
             current_state_nodes = self.state_transition_node_mapping[current_automaton_state]
             for pn in current_state_nodes:
                 for cn in pn.children:
-                    if cn.state in [l.state for l in leaves] and (cn.state, min_dist_to_acc) in self.discovered_state_distance_to_accept and cn.state not in child_nodes_in_tt:
+                    if cn.state in [l.state for l in leaves] and (cn.state, max_dist_from_init) in self.discovered_state_distance_from_init and cn.state not in child_nodes_in_tt:
                         child_nodes_in_tt.append(cn.state)
 
             q_values_child_nodes_in_tt = [self.a_star_state_q_function[state] for state in child_nodes_in_tt]
@@ -457,10 +496,10 @@ class AstarSearch:
 
         cand_states_list = list(set([leaf.state for leaf in leaves]))
 
-        leaves_min_dist_to_acc = min([distance for (state,distance) in self.discovered_state_distance_to_accept if state in cand_states_list])
+        leaves_max_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
 
-        for (state, distance) in self.discovered_state_distance_to_accept:
-            if state in cand_states_list and distance == leaves_min_dist_to_acc:
+        for (state, distance) in self.discovered_state_distance_from_init:
+            if state in cand_states_list and distance == leaves_max_dist_from_init:
                 best_states.append(state)
 
         q_values_best_states = [self.a_star_state_q_function[state] for state in best_states]
