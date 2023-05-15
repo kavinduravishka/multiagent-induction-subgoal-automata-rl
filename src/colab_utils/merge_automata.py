@@ -152,6 +152,7 @@ def merge_automata(automata1:SubgoalAutomaton,automata2:SubgoalAutomaton):
         for e in edges_not_merged_2:
             new_automata, new_automaton_state_counter, state_mapping = _add_unmergable(e, 2, new_automata, new_automaton_state_counter, state_mapping)
 
+    new_automata.reduce_redundent_states()
     return new_automata
 
 def _extract_positive_literals(edge):
