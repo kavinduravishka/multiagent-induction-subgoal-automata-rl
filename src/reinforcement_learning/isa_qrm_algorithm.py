@@ -251,7 +251,7 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
             for automaton_state in automaton.get_states():
                 automaton_state_id = automaton.get_state_id(automaton_state)
 
-                next_automaton_state = self._get_next_automaton_state(automaton, automaton_state, observations, observations_changed)
+                all_next_automaton_states = self._get_all_next_automaton_states(automaton, automaton_state, observations, observations_changed)
 
                 # next_merged_automaton_state_candidates = self._get_next_A_star_merged_automaton_state_without_updating(A_star_automaton, automaton_state, observations,
                 #                                                                                      observations_changed)
@@ -259,23 +259,24 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
                 # next_automaton_state = self._get_best_candidate_state_out_of_a_star_candidate(domain_id, agent_id, task_id, current_pair[0],
                 #                                                                                   current_pair[1], next_merged_automaton_state_candidates)
 
-                next_automaton_state_id = automaton.get_state_id(next_automaton_state)
-                
-                next_action = self._get_greedy_action(task, next_state, q_table[next_automaton_state_id])
+                for next_automaton_state in all_next_automaton_states:
+                    next_automaton_state_id = automaton.get_state_id(next_automaton_state)
+                    
+                    next_action = self._get_greedy_action(task, next_state, q_table[next_automaton_state_id])
 
-                next_pair = (next_state, next_action)
+                    next_pair = (next_state, next_action)
 
-                reward = self._get_automaton_transition_reward(automaton, automaton_state, next_automaton_state)
-                
-                if self.use_reward_shaping:
-                    reward += self._get_pseudoreward(automaton, automaton_state, next_automaton_state)
+                    reward = self._get_automaton_transition_reward(automaton, automaton_state, next_automaton_state)
+                    
+                    if self.use_reward_shaping:
+                        reward += self._get_pseudoreward(automaton, automaton_state, next_automaton_state)
 
-                if automaton.is_terminal_state(next_automaton_state):
-                    q_table[automaton_state_id][current_pair] += self.learning_rate * (reward - q_table[automaton_state_id][current_pair])
-                else:
-                    q_table[automaton_state_id][current_pair] += self.learning_rate * (
-                                reward + self.discount_rate * q_table[next_automaton_state_id][next_pair] -
-                                q_table[automaton_state_id][current_pair])
+                    if automaton.is_terminal_state(next_automaton_state):
+                        q_table[automaton_state_id][current_pair] += self.learning_rate * (reward - q_table[automaton_state_id][current_pair])
+                    else:
+                        q_table[automaton_state_id][current_pair] += self.learning_rate * (
+                                    reward + self.discount_rate * q_table[next_automaton_state_id][next_pair] -
+                                    q_table[automaton_state_id][current_pair])
 
     def _update_deep_q_functions(self, agent_id, task_id, experience_batch):
         states, actions, next_states, is_terminal, observations, observations_changed = zip(*experience_batch)
