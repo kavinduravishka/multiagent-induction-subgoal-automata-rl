@@ -160,7 +160,7 @@ class AstarSearch:
             while parent != None:
                 leaf_to_root_depth = self._get_branch_depth(leaf)
 
-                factor = max([0, (max_depth - leaf_to_root_depth)]) + 1
+                # factor = max([0, (max_depth - leaf_to_root_depth)]) + 1
                 
                 to_state = leaf.state
                 condition = leaf.parent_edge.condition
@@ -169,7 +169,7 @@ class AstarSearch:
                 sos_tuple = (from_state, condition, to_state)
 
                 if to_state == self.accept_state and reward == 1.0:
-                    self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (1 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                    self.a_star_edge_q_function[sos_tuple] += self.learning_rate * leaf_to_root_depth * (1 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
                 elif to_state == self.reject_state:
                     pass
                 else:
@@ -182,9 +182,9 @@ class AstarSearch:
                             child_edge_q_value_sum += self.target_a_star_edge_q_function[c_sos_tuple]
                             child_edge_q_value_square_sum += self.target_a_star_edge_q_function[c_sos_tuple] ** 2
                         try:
-                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (child_edge_q_value_square_sum/child_edge_q_value_sum - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate * leaf_to_root_depth * (child_edge_q_value_square_sum/child_edge_q_value_sum - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
                         except ZeroDivisionError:
-                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate ** factor * (0 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
+                            self.a_star_edge_q_function[sos_tuple] += self.learning_rate * leaf_to_root_depth * (0 - self.target_a_star_edge_q_function[sos_tuple])/parent.steps_after_taken_edge[condition]
                     else:
                         pass
                 
@@ -331,7 +331,10 @@ class AstarSearch:
 
         cand_states_list = list(set([leaf.state for leaf in leaves]))
 
-        leaves_max_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
+        try:
+            leaves_max_dist_from_init = max([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
+        except ValueError:
+            return [current_automaton_state]
 
         for (state, distance) in self.discovered_state_distance_from_init:
             if state in cand_states_list and distance == leaves_max_dist_from_init:
