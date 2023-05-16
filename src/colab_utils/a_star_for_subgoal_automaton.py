@@ -331,10 +331,10 @@ class AstarSearch:
 
         cand_states_list = list(set([leaf.state for leaf in leaves]))
 
-        leaves_max_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
+        leaves_min_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
 
         for (state, distance) in self.discovered_state_distance_from_init:
-            if state in cand_states_list and distance == leaves_max_dist_from_init:
+            if state in cand_states_list and distance == leaves_min_dist_from_init:
                 best_states.append(state)
 
         q_values_best_states = [self.a_star_state_q_function[state] for state in best_states]
