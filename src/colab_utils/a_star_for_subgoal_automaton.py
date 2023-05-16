@@ -331,7 +331,10 @@ class AstarSearch:
 
         cand_states_list = list(set([leaf.state for leaf in leaves]))
 
-        leaves_min_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
+        try:
+            leaves_min_dist_from_init = min([distance for (state,distance) in self.discovered_state_distance_from_init if state in cand_states_list])
+        except ValueError:
+            return [current_automaton_state]
 
         for (state, distance) in self.discovered_state_distance_from_init:
             if state in cand_states_list and distance == leaves_min_dist_from_init:
