@@ -24,11 +24,7 @@ def merge_automata(automata1:SubgoalAutomaton,automata2:SubgoalAutomaton):
     states_to_merge = [(initial_1, initial_2)]
 
     state_mapping = {(1, initial_1): initial_1,
-                    #  (1, accept_1): accept_1,
-                    #  (1, reject_1): reject_1,
                      (2, initial_2): initial_1,
-                    #  (2, accept_2): accept_1,
-                    #  (2, reject_2): reject_1,
                     }
     
     if accept_1 != None:
@@ -76,8 +72,8 @@ def merge_automata(automata1:SubgoalAutomaton,automata2:SubgoalAutomaton):
         if s_A2 in discovered_2:
             discovered_2.remove(s_A2)
 
-        discovered_1 += list(set(s_disc_1) - set(visited_1))
-        discovered_2 += list(set(s_disc_2) - set(visited_2))
+        discovered_1 += list(set(s_disc_1) - set(visited_1) - set(discovered_1))
+        discovered_2 += list(set(s_disc_2) - set(visited_2) - set(discovered_2))
 
         edges_1 = automata1.get_outgoing_edges(s_A1)
         edges_2 = automata2.get_outgoing_edges(s_A2)
@@ -122,7 +118,7 @@ def merge_automata(automata1:SubgoalAutomaton,automata2:SubgoalAutomaton):
 
         s_disc_1 = automata1.get_outgoing_to_states(s_A1)
 
-        discovered_1 += list(set(s_disc_1) - set(visited_1))
+        discovered_1 += list(set(s_disc_1) - set(visited_1) - set(discovered_1))
 
         edges_1 = automata1.get_outgoing_edges(s_A1)
         edge_data_1 = []
@@ -140,7 +136,7 @@ def merge_automata(automata1:SubgoalAutomaton,automata2:SubgoalAutomaton):
         visited_2.append(s_A2)
 
         s_disc_2 = automata2.get_outgoing_to_states(s_A2)
-        discovered_2 += list(set(s_disc_2) - set(visited_2))
+        discovered_2 += list(set(s_disc_2) - set(visited_2) - set(discovered_2))
         edges_2 = automata2.get_outgoing_edges(s_A2)
         edge_data_2 = []
 
