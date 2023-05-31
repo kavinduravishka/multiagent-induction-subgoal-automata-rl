@@ -886,7 +886,7 @@ class ISAAlgorithmHRL(ISAAlgorithmBase):
                     self._export_meta_functions(agent_id, domain_id, task_id)
 
     def _export_policy_bank(self, agent_id, domain_id, task_id):
-        automaton = self._get_automaton(domain_id, agent_id)
+        automaton = self._get_merged_automaton(domain_id, agent_id)
         conditions = automaton.get_all_conditions()
 
         for i in range(len(conditions)):

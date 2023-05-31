@@ -73,7 +73,7 @@ class LearningAlgorithm(ABC):
         self.learning_rate = utils.get_param(params, LearningAlgorithm.LEARNING_RATE, 0.1)
         self.discount_rate = utils.get_param(params, LearningAlgorithm.DISCOUNT_RATE, 0.99)
         self.is_tabular_case = utils.get_param(params, LearningAlgorithm.IS_TABULAR_CASE, True)
-        self.local_auotomata_queue_size = utils.get_param(params, LearningAlgorithm.LOCAL_AUTOMATON_QUEUE_SIZE, 5)
+        self.local_auotomata_queue_size = utils.get_param(params, LearningAlgorithm.LOCAL_AUTOMATON_QUEUE_SIZE, 1)
 
         self.exploration_rate = utils.get_param(params, LearningAlgorithm.EXPLORATION_RATE, 0.1)
         self.use_exploration_rate_annealing = utils.get_param(params, LearningAlgorithm.USE_EXPLORATION_RATE_ANNEALING, False)

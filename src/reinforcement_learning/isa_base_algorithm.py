@@ -177,15 +177,16 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # get initial observations and initialise histories
         initial_observations = self._get_task_observations(task)
 
-        self._update_histories(observation_history, compressed_observation_history, initial_observations)
+        observations_changed = self._update_histories(observation_history, compressed_observation_history, initial_observations)
 
         self._initiate_A_star()
 
-        # get actual initial automaton state (performs verification that there is only one possible initial state!)
-        # current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
+        self._update_a_star_tree(domain_id, initial_observations, observations_changed, [False for _ in range(self.num_agents)])
 
-        current_merged_automaton_state_candidates = self._get_initial_A_star_merged_automaton_state(domain_id, task_id, initial_observations, [True for t in range(self.num_agents)])
-        current_merged_automaton_state = [ current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
+        current_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], 
+                                                            self.a_star_automata[domain_id][agent_id].initial_state, initial_observations[agent_id], 
+                                                            observations_changed[agent_id]) for agent_id in range(self.num_agents)]
+        current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
         current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, [True for t in range(self.num_agents)])
 
         # update the automaton if the initial state achieves the goal and the example is not covered
@@ -199,28 +200,34 @@ class ISAAlgorithmBase(LearningAlgorithm):
                                                                              can_learn_new_automaton)
 
             if any(updated_automaton):  # get the actual initial state as done before
-                # current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
                 self._share_automaton(domain_id, updated_automaton)
-                updated_merged_automaton = self._merge_automaton(domain_id, updated_automaton)
+
+            merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
+
+            if any(merged_automaton_contradict_env_state) and any(updated_automaton):
+                updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
+                self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
                 self._initiate_A_star(updated_merged_automaton)
                 self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
                 self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
 
-                self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
-                current_merged_automaton_state_candidates = self._get_initial_A_star_merged_automaton_state(domain_id, task_id, initial_observations, updated_merged_automaton)
+                current_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], 
+                                                            self.a_star_automata[domain_id][agent_id].initial_state, initial_observations[agent_id], 
+                                                            observations_changed[agent_id]) for agent_id in range(self.num_agents)]
                 current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
+            
+            if any(updated_automaton):
                 current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False for _ in range(self.num_agents)]
+        updated_merged_automaton = [False for _ in range(self.num_agents)]
 
-        # automaton_all_agents = self.automata[domain_id]
         merged_automaton_all_agents = self.merged_automata[domain_id]
 
         is_terminal = task.is_terminal()
 
-        # while not all(is_terminal) and not any(is_goal_achieved) and episode_length < self.max_episode_length and not any(interrupt_episode):
-        while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode):
+        while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode) and not any(updated_merged_automaton):
 
             current_merged_automaton_state_id = [merged_automaton_all_agents[agent_id].get_state_id(current_merged_automaton_state[agent_id]) 
                                           if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
@@ -236,7 +243,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
             # whether observations have changed or not is important for QRM when using compressed traces
             observations_changed = self._update_histories(observation_history, compressed_observation_history, observations)
 
-            # print("DEBUG : UPDATE tt from base")
             self._update_a_star_tree(domain_id, observations, observations_changed, terminated_agents)
 
             if self.train_model:
@@ -244,29 +250,18 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 self._update_q_functions(task_id, current_state, actions, next_state, is_terminal, observations, observations_changed, terminated_agents)
 
 
-            # Get local automaton's next state 
-            # next_automaton_state = [self._get_next_automaton_state(self.automata[domain_id][agent_id], current_automaton_state[agent_id],
-            #                                                     observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
-            
-
-
             # Get merged automaton's next state
             next_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], current_merged_automaton_state[agent_id],
                                                                 observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
-            
             next_merged_automaton_state = [self._get_best_candidate_state_out_of_a_star_candidate(domain_id, agent_id, task_id, current_state[agent_id],
                                                                                                   actions[agent_id], next_merged_automaton_state_candidates[agent_id])
                                                                                                     for agent_id in range(self.num_agents)]
-            
-            # Get next succeeding local automatons states
             next_succeeding_automaton_states = [self._get_next_automaton_state(self.local_automata_queue[domain_id][agent_id][-1], current_succeeding_automaton_state[agent_id],
                                                                 observations[agent_id], observations_changed[agent_id]) for agent_id in range(self.num_agents)]
     
-            
             # episode has to be interrupted if an automaton is learnt
             can_learn_new_automaton = self._can_learn_new_automaton(domain_id, task)
-
-
+            
             if not any(interrupt_episode) and self.interleaved_automaton_learning and any(can_learn_new_automaton):
                 interrupt_episode = self._perform_interleaved_automaton_learning(task, domain_id, next_succeeding_automaton_states,
                                                                                 observation_history,
@@ -275,13 +270,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 
                 if any(interrupt_episode):
                     self._share_automaton(domain_id, interrupt_episode)
-                    updated_merged_automaton = self._merge_automaton(domain_id, interrupt_episode)
+
+                merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
+                
+                if any(merged_automaton_contradict_env_state) and any(interrupt_episode):
+                    updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
                     self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
                     self._initiate_A_star(updated_merged_automaton)
                     self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
                     self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
 
-            if not any(interrupt_episode):
+            if not any(interrupt_episode) and not any(updated_merged_automaton):
                 automatons = self.merged_automata[domain_id]
                 for agent_id in range(self.num_agents):
                     total_reward[agent_id] += reward[agent_id]
@@ -291,18 +290,12 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
             # update current environment and automaton states and increase episode length
             current_state = next_state
-            # current_automaton_state = next_automaton_state
             current_merged_automaton_state = next_merged_automaton_state
             current_succeeding_automaton_state = next_succeeding_automaton_states
             episode_length = [episode_length[i] + 1* (not terminated_agents[i]) for i in range(self.num_agents)]
 
         completed_episode = [not ie for ie in interrupt_episode]
 
-        # try:
-            # print("DEBUG 1.0 :", self.is_same_true_count, self.is_immediate_true_count, self.is_immediate_false_count)
-        #     pass
-        # except AttributeError:
-        #     pass
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
     
     def _is_immediate_following_state(self, domain_id, agent_id, current_merged_automaton_state, next_merged_automaton_state):
@@ -332,8 +325,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 continue
             else:
                 a_star_automaton:AstarSearch = self._get_A_star_automaton(domain_id, agent_id)
-                # self.target_a_star_edge_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_edge_q_functions(reward[agent_id], is_terminal[agent_id], self.target_a_star_edge_q_functions[domain_id][agent_id][task_id])
-                # self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = a_star_automaton.update_a_star_state_q_functions(self.target_a_star_state_q_functions[domain_id][agent_id][task_id])
                 self.target_a_star_edge_q_functions[domain_id][agent_id] = a_star_automaton.update_a_star_edge_q_functions(reward[agent_id], is_terminal[agent_id], self.target_a_star_edge_q_functions[domain_id][agent_id])
                 self.target_a_star_state_q_functions[domain_id][agent_id] = a_star_automaton.update_a_star_state_q_functions(self.target_a_star_state_q_functions[domain_id][agent_id])
 
@@ -345,7 +336,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
             else:
 
                 a_star_automaton:AstarSearch = self._get_A_star_automaton(domain_id, agent_id)
-                # print("DEBUG : UPDATE tt from _update_a_star_tree")
                 a_star_automaton.update_transition_tree(observations[agent_id])
 
 
@@ -548,10 +538,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self._build_domain_A_star_edge_q_functions(domain_id)
 
     def _build_domain_A_star_edge_q_functions(self, domain_id, updated_automaton = None):
-        # if self.a_star_edge_q_functions[domain_id] == None:
-        #     self.a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
-        # if self.target_a_star_edge_q_functions[domain_id] == None:
-        #     self.target_a_star_edge_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
 
         if self.a_star_edge_q_functions[domain_id] == None:
             self.a_star_edge_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
@@ -569,8 +555,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self._build_domain_A_star_edge_q_functions_for_specific_agent(domain_id, i)
 
     def _build_domain_A_star_edge_q_functions_for_specific_agent(self, domain_id, agent_id):
-        # self.a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
-        # self.target_a_star_edge_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
 
         self.a_star_edge_q_functions[domain_id][agent_id] = {}
         self.target_a_star_edge_q_functions[domain_id][agent_id] = {}
@@ -585,12 +569,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
             outgoing_edges = automaton.get_outgoing_edges(state)
             
             for (condition, to_state) in outgoing_edges:
-                # for task_id in range(self.num_tasks):
-                #     if (state, condition, to_state) not in self.a_star_edge_q_functions[domain_id][agent_id][task_id].keys():
-                #         self.a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
-                #         self.target_a_star_edge_q_functions[domain_id][agent_id][task_id][(state, condition, to_state)] = 0
-
-
                 if (state, condition, to_state) not in self.a_star_edge_q_functions[domain_id][agent_id].keys():
                     self.a_star_edge_q_functions[domain_id][agent_id][(state, condition, to_state)] = 0
                     self.target_a_star_edge_q_functions[domain_id][agent_id][(state, condition, to_state)] = 0
@@ -604,8 +582,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
     A star Automata state selection method management : EDGE Q FUNCTIONS
     '''
 
-    # def _get_A_star_edge_q_function(self, domain_id, agent_id, task_id):
-    #     return self.a_star_edge_q_functions[domain_id][agent_id][task_id]
 
     def _build_A_star_state_q_functions(self):
         self.a_star_state_q_functions = [None for _ in range(self.num_domains)]
@@ -618,11 +594,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self._build_domain_A_star_state_q_functions(domain_id)
 
     def _build_domain_A_star_state_q_functions(self, domain_id, updated_automaton = None):
-        # if self.a_star_state_q_functions[domain_id] == None:
-        #     self.a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
-        # if self.target_a_star_state_q_functions[domain_id] == None:
-        #     self.target_a_star_state_q_functions[domain_id] = [[{} for _ in range(self.num_tasks)] for _ in range(self.num_agents)]
-
         if self.a_star_state_q_functions[domain_id] == None:
             self.a_star_state_q_functions[domain_id] = [{} for _ in range(self.num_agents)]
         if self.target_a_star_state_q_functions[domain_id] == None:
@@ -639,9 +610,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     self._build_domain_A_star_state_q_functions_for_specific_agent(domain_id, i)
 
     def _build_domain_A_star_state_q_functions_for_specific_agent(self, domain_id, agent_id):
-        # self.a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
-        # self.target_a_star_state_q_functions[domain_id][agent_id] = [{} for _ in range(self.num_tasks)]
-
         self.a_star_state_q_functions[domain_id][agent_id] = {}
         self.target_a_star_state_q_functions[domain_id][agent_id] = {}
 
@@ -649,15 +617,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
         automaton:SubgoalAutomaton = self._get_merged_automaton(domain_id, agent_id)
 
         all_states = automaton.get_states()
-
-        # for task_id in range(self.num_tasks):
-        #     self.a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
-        #     self.target_a_star_state_q_functions[domain_id][agent_id][task_id] = {state:0 for state in all_states}
-
+        
         self.a_star_state_q_functions[domain_id][agent_id]= {state:0 for state in all_states}
         self.target_a_star_state_q_functions[domain_id][agent_id] = {state:0 for state in all_states}
-
-            
 
     '''
     Automata Management Methods (setters, getters, associated rewards)
@@ -782,7 +744,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
         
         out_all_agents = []
 
-        # print("UPDATED EXAMPLES :",updated_examples)
         for agent_id in range(self.num_agents):
             if updated_examples[agent_id]:
                 if self.debug:
@@ -838,6 +799,33 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 else:
                     out_all_agents.append(False)  # whether example sets have been updated)
         return out_all_agents
+    
+    def _check_observations_goal_state_integrity_with_merged_automaton(self, task, domain_id, can_learn_new_automaton):
+        out_all_agents = []
+        for agent_id in range(self.num_agents):
+            if not can_learn_new_automaton[agent_id]:
+                out_all_agents.append(False)
+                continue
+            
+            a_star_automaton:AstarSearch = self.a_star_automata[domain_id][agent_id]
+
+            if task.is_terminal()[agent_id]:
+                if task.is_goal_achieved()[agent_id]:
+                    if not a_star_automaton.leaves_contain_accept_state():
+                        out_all_agents.append(True)
+                    else:
+                        out_all_agents.append(False)
+                else:
+                    if not a_star_automaton.leaves_contain_reject_state() or a_star_automaton.leaves_contain_accept_state():
+                        out_all_agents.append(True)
+                    else:
+                        out_all_agents.append(False)
+            else:
+                if a_star_automaton.leaves_contain_accept_state():
+                    out_all_agents.append(True)
+                else:
+                    out_all_agents.append(False)
+        return out_all_agents
 
     def _update_example_set(self, example_set, observation_history, compressed_observation_history):                # don't change
         """Updates the a given example set with the corresponding history of observations depending on whether      
@@ -850,8 +838,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
         if history_tuple not in example_set or history_tuple == (): 
             if history_tuple != ():   # don't change
                 example_set.add(history_tuple)      # don't change
-        else:                                   # don't change
-            # print("DEBUG : example causes to fail :",history_tuple,", Example set :",example_set )
+        else:          
+            print("history_tuple :",history_tuple)                         # don't change
             raise RuntimeError("An example that an automaton is currently covered cannot be uncovered afterwards!") # don't change
 
     def _update_automaton(self, task, domain_id, agent_id):

@@ -454,15 +454,12 @@ class ISAAlgorithmQRM(ISAAlgorithmBase):
         # the previous q-functions are not valid anymore since the automata structure has changed, so we reset them
         if agent_id==None and updated_automaton == None:
             self._reset_q_functions(domain_id)
-            # self._reset_A_star_state_q_functions(domain_id)
         elif agent_id == None:
             for i in range(self.num_agents):
                 if updated_automaton[i]:
                     self._reset_q_function_for_specific_agent(domain_id, i)
-                    # self._reset_A_star_state_q_functions_for_specific_agent(domain_id, i)
         else:
             self._reset_q_function_for_specific_agent(domain_id, agent_id)
-            # self._reset_A_star_state_q_functions_for_specific_agent(domain_id, agent_id)
 
     def _reset_q_function_for_specific_agent(self, domain_id, agent_id):
         if self.is_tabular_case:

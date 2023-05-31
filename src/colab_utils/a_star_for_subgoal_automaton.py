@@ -345,3 +345,32 @@ class AstarSearch:
         return [best_states[randargmax(q_values_best_states)]]
 
 
+    def leaves_contain_accept_state(self):
+        leaves:list[TransitionNode] = []
+
+        for state in self.discovered_states:
+            for node in self.state_transition_node_mapping[state]:
+                if node.children == [] or node.children == None:
+                    leaves.append(node)
+
+        for l in leaves:
+            if l.state == self.automaton.accept_state:
+                # ("DEBUG : leaves contain accept")
+                return True
+            
+        return False
+    
+    def leaves_contain_reject_state(self):
+        leaves:list[TransitionNode] = []
+
+        for state in self.discovered_states:
+            for node in self.state_transition_node_mapping[state]:
+                if node.children == [] or node.children == None:
+                    leaves.append(node)
+
+        for l in leaves:
+            if l.state == self.automaton.reject_state:
+                # print("DEBUG : leaves contain reject")
+                return True
+            
+        return False
