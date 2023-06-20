@@ -53,6 +53,8 @@ class LearningAlgorithm(ABC):
 
     LOCAL_AUTOMATON_QUEUE_SIZE = "local_automaton_queue_size"
 
+    AUTOMATON_RELEASE_FREQUENCY = "automaton_release_frequency"
+
     ABSOLUTE_RUNNING_TIME_FILENAME = "running_time.txt"  # name of the file registering the total running time of the algorithm
     MODELS_FOLDER = "models"                             # where are the final models saved at the end of the learning
 
@@ -74,6 +76,8 @@ class LearningAlgorithm(ABC):
         self.discount_rate = utils.get_param(params, LearningAlgorithm.DISCOUNT_RATE, 0.99)
         self.is_tabular_case = utils.get_param(params, LearningAlgorithm.IS_TABULAR_CASE, True)
         self.local_auotomata_queue_size = utils.get_param(params, LearningAlgorithm.LOCAL_AUTOMATON_QUEUE_SIZE, 1)
+
+        self.automaton_release_frequency = utils.get_param(params, LearningAlgorithm.AUTOMATON_RELEASE_FREQUENCY, 30)
 
         self.exploration_rate = utils.get_param(params, LearningAlgorithm.EXPLORATION_RATE, 0.1)
         self.use_exploration_rate_annealing = utils.get_param(params, LearningAlgorithm.USE_EXPLORATION_RATE_ANNEALING, False)

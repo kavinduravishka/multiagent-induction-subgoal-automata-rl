@@ -14,6 +14,7 @@ from ilasp.generator.ilasp_task_generator import generate_ilasp_task
 from ilasp.parser import ilasp_solution_parser
 from ilasp.solver.ilasp_solver import solve_ilasp_task
 
+from time import time
 
 
 class ISAAlgorithmBase(LearningAlgorithm):
@@ -142,14 +143,24 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.goal_examples = None
         self.dend_examples = None
         self.inc_examples = None
+        self.all_counterexamples = None
+        self.inc_ex_mask = None
         self._reset_examples()
+
+        self.last_release_threshold = [0 for _ in range(self.num_agents)]
 
         # keep track of the number of learnt automata per domain
         self.automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
         self.merged_automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
 
-        self.automaton_learning_episodes = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.automaton_learning_episodes = [[[0] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.merged_automaton_learning_episodes = [[[0] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
+        self.shared_automaton_ffw_check_state = [[[[] for _ in range(self.num_agents)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.collaborative_vote = [[[[] for _ in range(self.num_agents)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+
+        self.last_merged_automatons = [[[None for _ in range(self.num_agents)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
             utils.rm_dirs(self.get_automaton_task_folders())
             utils.rm_dirs(self.get_automaton_solution_folders())
@@ -166,7 +177,11 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self._write_automaton_learning_episodes()
 
     def _run_episode(self, domain_id, task_id):
+        current_release_threshold = self.current_episode//self.automaton_release_frequency + 2
         task = self._get_task(domain_id, task_id)  # get the task to learn
+
+        if self.shared_automata == None:
+            self._share_automaton(domain_id,[True for _ in range(self.num_agents)])
 
         # initialize reward and steps counters, histories and reset the task to its initial state
         total_reward = [0 for i in range(self.num_agents)]
@@ -201,24 +216,29 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
             if any(updated_automaton):  # get the actual initial state as done before
                 self._share_automaton(domain_id, updated_automaton)
-
-            merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
-
-            if any(merged_automaton_contradict_env_state) and any(updated_automaton):
-                updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
-                self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
-                self._initiate_A_star(updated_merged_automaton)
-                self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
-                self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
-
-                current_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], 
-                                                            self.a_star_automata[domain_id][agent_id].initial_state, initial_observations[agent_id], 
-                                                            observations_changed[agent_id]) for agent_id in range(self.num_agents)]
-                current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
-            
-            if any(updated_automaton):
                 current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, updated_automaton)
 
+        merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
+
+        if any(merged_automaton_contradict_env_state) and any([current_release_threshold > self.last_release_threshold[agent_id] for agent_id in range(self.num_agents)]): # and any(updated_automaton):
+            for i in range(self.num_agents):
+                self._fast_forward_examples(domain_id, i, task_id, merged_automaton_contradict_env_state)
+            updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
+            self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
+            self._initiate_A_star(updated_merged_automaton)
+            self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
+            self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
+
+            current_merged_automaton_state_candidates = [self._get_next_A_star_merged_automaton_state(self.a_star_automata[domain_id][agent_id], 
+                                                        self.a_star_automata[domain_id][agent_id].initial_state, initial_observations[agent_id], 
+                                                        observations_changed[agent_id]) for agent_id in range(self.num_agents)]
+            current_merged_automaton_state = [current_merged_automaton_state_candidates[agent_id][0] for agent_id in range(self.num_agents)]
+
+            if any(updated_merged_automaton):
+                for i in range(self.num_agents):
+                    if updated_merged_automaton[i]:
+                        self.last_release_threshold[i] += 1
+            
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False for _ in range(self.num_agents)]
         updated_merged_automaton = [False for _ in range(self.num_agents)]
@@ -271,14 +291,22 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 if any(interrupt_episode):
                     self._share_automaton(domain_id, interrupt_episode)
 
-                merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
+            merged_automaton_contradict_env_state = self._check_observations_goal_state_integrity_with_merged_automaton(task, domain_id, can_learn_new_automaton)
                 
-                if any(merged_automaton_contradict_env_state) and any(interrupt_episode):
-                    updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
-                    self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
-                    self._initiate_A_star(updated_merged_automaton)
-                    self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
-                    self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
+            if any(merged_automaton_contradict_env_state) and any([current_release_threshold > self.last_release_threshold[agent_id] for agent_id in range(self.num_agents)]):
+                for i in range(self.num_agents):
+                    self._fast_forward_examples(domain_id, i, task_id, merged_automaton_contradict_env_state)
+
+                updated_merged_automaton = self._merge_automaton(domain_id, merged_automaton_contradict_env_state)
+                self._on_merged_automaton_learned(domain_id, updated_automaton = updated_merged_automaton)
+                self._initiate_A_star(updated_merged_automaton)
+                self._build_domain_A_star_edge_q_functions(domain_id, updated_merged_automaton)
+                self._build_domain_A_star_state_q_functions(domain_id, updated_merged_automaton)
+
+                if any(updated_merged_automaton):
+                    for i in range(self.num_agents):
+                        if updated_merged_automaton[i]:
+                            self.last_release_threshold[i] += 1
 
             if not any(interrupt_episode) and not any(updated_merged_automaton):
                 automatons = self.merged_automata[domain_id]
@@ -298,6 +326,45 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
         return completed_episode, total_reward, episode_length, task.is_terminal(), observation_history, compressed_observation_history
     
+    def _fast_forward_examples(self, domain_id, agent_id, task_id, merged_automaton_contradict_env_state):
+        release_threshold = self.current_episode//self.automaton_release_frequency + 2
+
+        shared_automatons = self.shared_automata[domain_id][agent_id]
+
+        inc_examples = []
+
+        for i in range(min([len(self.inc_ex_mask[domain_id][agent_id]), release_threshold])):
+            if self.inc_ex_mask[domain_id][agent_id][i]:
+                inc_examples.append(self.inc_examples[domain_id][agent_id])
+
+        inc_examples = self.inc_examples[domain_id][agent_id]
+
+        last_success = self.shared_automaton_ffw_check_state[domain_id][agent_id]
+
+        if merged_automaton_contradict_env_state[agent_id]:
+            for i in range(self.num_agents):
+                for j in range(min([len(last_success[i]), release_threshold])):
+                    if last_success[i][j] == False:
+                        continue
+
+                    for example in inc_examples:
+                        last_obs = None
+                        current_state = shared_automatons[i][j].initial_state
+                        for obs in example:
+                            current_state = self._get_next_automaton_state(shared_automatons[i][j], current_state, obs, obs != last_obs)
+                            last_obs = obs
+
+                        if current_state == shared_automatons[i][j].accept_state or current_state == shared_automatons[i][j].reject_state or (shared_automatons[i][j].accept_state == None and shared_automatons[i][j].reject_state == None):
+                            # print("DEBUG : j :", j ,", aut states : PASS :", shared_automatons[i][j].accept_state == None, shared_automatons[i][j].reject_state == None)
+                            self.shared_automaton_ffw_check_state[domain_id][agent_id][i][j] = False
+                            self.collaborative_vote[domain_id][agent_id][i][j] = 0
+                            break
+                    else:
+                        if len(inc_examples) > 0 or not(shared_automatons[i][j].accept_state == None and shared_automatons[i][j].reject_state == None):
+                            self.collaborative_vote[domain_id][agent_id][i][j] = 1
+                        else:
+                            self.collaborative_vote[domain_id][agent_id][i][j] = 0
+
     def _is_immediate_following_state(self, domain_id, agent_id, current_merged_automaton_state, next_merged_automaton_state):
         merged_automaton:SubgoalAutomaton = self._get_merged_automaton(domain_id, agent_id)
         if current_merged_automaton_state == next_merged_automaton_state:
@@ -409,16 +476,57 @@ class ISAAlgorithmBase(LearningAlgorithm):
         for i in range(len(updated_automata)):
             if updated_automata[i]:
                 for agent_id in range(self.num_agents):
-                    self.shared_automata[domain_id][agent_id][i] = self._get_automaton(domain_id, i)
+                    try:
+                        self.shared_automata[domain_id][agent_id][i].append(self._get_automaton(domain_id, i))
+                    except KeyError as e:
+                        self.shared_automata[domain_id][agent_id][i] = []
+                        self.shared_automata[domain_id][agent_id][i].append(self._get_automaton(domain_id, i))
+                        
+                    try:
+                        self.shared_automaton_ffw_check_state[domain_id][agent_id][i].append(True)
+                        self.collaborative_vote[domain_id][agent_id][i].append(0)
+                    except IndexError as e:
+                        self.shared_automaton_ffw_check_state[domain_id][agent_id][i] = []
+                        self.shared_automaton_ffw_check_state[domain_id][agent_id][i].append(True)
+                        self.collaborative_vote[domain_id][agent_id][i].append(0)
 
-    def _merge_automaton(self, domain_id, updated_automaton):
+    def _merge_automaton(self, domain_id, merged_automaton_contradict_env_state):
+        release_threshold = self.current_episode//self.automaton_release_frequency + 2
+
         updated_merged_automaton = []
         if self.merged_automata == None:
             self.merged_automata = [[None for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         for agent_id in range(self.num_agents):
-            if updated_automaton[agent_id]:
-                automatas_to_combine = [v for (k,v) in list(self.shared_automata[domain_id][agent_id].items())]
+            if merged_automaton_contradict_env_state[agent_id] and release_threshold > self.last_release_threshold[agent_id]:
+                try:
+                    if self.merged_automaton_learning_episodes[domain_id][agent_id] == [] or self.automaton_learning_episodes[domain_id][agent_id] == []:
+                        pass
+                    elif not any([self.merged_automaton_learning_episodes[domain_id][agent_id][-1] < self.automaton_learning_episodes[domain_id][i][-1] for i in range(self.num_agents)]):
+                        updated_merged_automaton.append(False)
+                        continue
+                except IndexError as e:
+                    print(self.merged_automaton_learning_episodes[domain_id][agent_id], self.automaton_learning_episodes[domain_id])
+                    raise e
+                
+                vote_counts= self._count_votes(domain_id)
+
+                selected_automatons = self._get_most_voted_automatons(vote_counts)
+
+                indexes_to_combine = [None for _ in range(self.num_agents)]
+                
+                for t in selected_automatons:
+                    indexes_to_combine[t[0]] = t[1]
+                # indexes_to_combine = [self._get_last_true_index(self.shared_automaton_ffw_check_state[domain_id][agent_id][i][0:release_threshold]) for i in range(self.num_agents)]
+
+                if indexes_to_combine == self.last_merged_automatons[domain_id][agent_id]:
+                    updated_merged_automaton.append(False)
+                    continue
+
+                self.last_merged_automatons[domain_id][agent_id] = indexes_to_combine
+
+                automatas_to_combine = [v[indexes_to_combine[k]] for (k,v) in list(self.shared_automata[domain_id][agent_id].items()) if indexes_to_combine[k] != None]
+
                 automata_1 = automatas_to_combine[0]
                 other_automata = automatas_to_combine[1:]
                 for automata_2 in other_automata:
@@ -430,11 +538,57 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 automata_1.plot(self.get_merged_automaton_plot_folder(domain_id, agent_id),
                                          ISAAlgorithmBase.MERGED_AUTOMATON_PLOT_FILENAME % self.merged_automaton_counters[domain_id][agent_id])
     
+                print("DEBUG : merged automatons :",  self.last_merged_automatons)
                 updated_merged_automaton.append(True)
+                self.merged_automaton_learning_episodes[domain_id][agent_id].append(self.current_episode)
             else:
                 updated_merged_automaton.append(False)
         return updated_merged_automaton
+    
+    def _count_votes(self, domain_id):
+        release_threshold = self.current_episode//self.automaton_release_frequency + 2
 
+        votes = [[] for _ in range(self.num_agents)]
+
+        for voter_id in range(self.num_agents):
+            for votee_id in range(self.num_agents):
+                for j in range(min([release_threshold, len(self.collaborative_vote[domain_id][voter_id][votee_id])])):
+                    try:
+                        votes[votee_id][j] += self.collaborative_vote[domain_id][voter_id][votee_id][j]
+                    except IndexError:
+                        votes[votee_id].append(0)
+                        votes[votee_id][j] += self.collaborative_vote[domain_id][voter_id][votee_id][j]
+
+        return votes
+    
+    def _get_most_voted_automatons(self, vote_counts):
+        max_votes = max([max(vote_count) for vote_count in vote_counts])
+
+        selected_automatons = []
+        for agent_id in range(self.num_agents):
+            if max_votes in vote_counts[agent_id]:
+                selected_automatons.append((agent_id, self._get_last_occurence_index(vote_counts[agent_id], max_votes)))
+
+        return selected_automatons
+    
+    def _get_first_true_index(self, lst):
+        try:
+            return lst.index(True)
+        except ValueError:
+            return None
+        
+    def _get_last_true_index(self, lst):
+        for i in range(len(lst) - 1, -1, -1):
+            if lst[i] is True:
+                return i
+        return None
+    
+    def _get_last_occurence_index(self, array, element):
+        for i in range(len(array) - 1, -1, -1):
+            if array[i] == element:
+                return i
+        return None
+        
     def _get_merged_automaton(self, domain_id,agent_id):
         return self.merged_automata[domain_id][agent_id]
 
@@ -765,6 +919,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.goal_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
         self.dend_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
         self.inc_examples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
+        self.all_counterexamples = [[set() for i in range(self.num_agents)]for j in range(self.num_domains)]
+        self.inc_ex_mask = [[[] for i in range(self.num_agents)]for j in range(self.num_domains)]
 
     def _update_examples(self, task, domain_id, current_automaton_state, observation_history, compressed_observation_history, can_learn_new_automaton):
         """Updates the set of examples. Returns True if the set of examples has been updated and False otherwise. Note
@@ -781,12 +937,16 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 if task.is_goal_achieved()[agent_id]:
                     if current_automaton_state[agent_id] is None or not automaton.is_accept_state(current_automaton_state[agent_id]):
                         self._update_example_set(self.goal_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        self._update_example_set(self.all_counterexamples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        self.inc_ex_mask[domain_id][agent_id].append(False)
                         out_all_agents.append(True)
                     else:
                         out_all_agents.append(False)
                 else:
                     if current_automaton_state[agent_id] is None or not automaton.is_reject_state(current_automaton_state[agent_id]):
                         self._update_example_set(self.dend_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        self._update_example_set(self.all_counterexamples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                        self.inc_ex_mask[domain_id][agent_id].append(False)
                         out_all_agents.append(True)
                     else:
                         out_all_agents.append(False)
@@ -795,6 +955,8 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 # set of incomplete unnecessarily)
                 if current_automaton_state[agent_id] is None or automaton.is_terminal_state(current_automaton_state[agent_id]):
                     self._update_example_set(self.inc_examples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                    self._update_example_set(self.all_counterexamples[domain_id][agent_id], observation_history[agent_id], compressed_observation_history[agent_id])
+                    self.inc_ex_mask[domain_id][agent_id].append(True)
                     out_all_agents.append(True)
                 else:
                     out_all_agents.append(False)  # whether example sets have been updated)
@@ -803,9 +965,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _check_observations_goal_state_integrity_with_merged_automaton(self, task, domain_id, can_learn_new_automaton):
         out_all_agents = []
         for agent_id in range(self.num_agents):
-            if not can_learn_new_automaton[agent_id]:
-                out_all_agents.append(False)
-                continue
             
             a_star_automaton:AstarSearch = self.a_star_automata[domain_id][agent_id]
 
@@ -816,12 +975,12 @@ class ISAAlgorithmBase(LearningAlgorithm):
                     else:
                         out_all_agents.append(False)
                 else:
-                    if not a_star_automaton.leaves_contain_reject_state() or a_star_automaton.leaves_contain_accept_state():
+                    if not a_star_automaton.leaves_contain_reject_state():
                         out_all_agents.append(True)
                     else:
                         out_all_agents.append(False)
             else:
-                if a_star_automaton.leaves_contain_accept_state():
+                if a_star_automaton.leaves_contain_accept_state() or a_star_automaton.leaves_contain_reject_state():
                     out_all_agents.append(True)
                 else:
                     out_all_agents.append(False)
@@ -869,8 +1028,6 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 # plot the new automaton
                 candidate_automaton.plot(self.get_automaton_plot_folder(domain_id, agent_id),
                                          ISAAlgorithmBase.AUTOMATON_PLOT_FILENAME % self.automaton_counters[domain_id][agent_id])
-
-                # self._on_automaton_learned(domain_id,agent_id)
             else:
                 # if the task is UNSATISFIABLE, it means the number of states is not enough to cover the examples, so
                 # the number of states is incremented by 1 and try again
