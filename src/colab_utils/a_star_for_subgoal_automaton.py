@@ -132,7 +132,6 @@ class AstarSearch:
         self.target_a_star_edge_q_function = target_a_star_edge_q_function
 
         if not is_terminal or reward != 1.0:
-            # print("DEBUG 1.0 : reward :", reward)
             return dc(self.a_star_edge_q_function)
 
         # Update edge q values up the transition tree
@@ -146,21 +145,10 @@ class AstarSearch:
 
         leaves.sort(key= lambda x : self._get_branch_depth(x))
 
-        if self.accept_state != None:
-            max_depth = self.automaton.get_distance(self.initial_state, self.accept_state, "min_distance")
-        else:
-            max_depth = self._get_branch_depth(leaves[-1])
-
         for leaf in leaves:
-            # if self._get_branch_depth(leaf) != max_depth:
-            #     continue
-
-            
             parent = leaf.parent
             while parent != None:
                 leaf_to_root_depth = self._get_branch_depth(leaf)
-
-                # factor = max([0, (max_depth - leaf_to_root_depth)]) + 1
                 
                 to_state = leaf.state
                 condition = leaf.parent_edge.condition
@@ -192,7 +180,6 @@ class AstarSearch:
                 leaf = leaf.parent
                 leaf_to_root_depth += 1
 
-        # print("DEBUG : self.a_star_edge_q_function :",self.a_star_edge_q_function)
         return dc(self.a_star_edge_q_function)
     
     def _get_branch_depth(self, leaf):
@@ -230,12 +217,10 @@ class AstarSearch:
                 sum_q_value += value
 
             try:
-                # print("DEBUG : updated state q")
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value/sum_q_value - self.target_a_star_state_q_function[state])
             except ZeroDivisionError:
                 self.a_star_state_q_function[state] += self.learning_rate * (square_sum_q_value - self.target_a_star_state_q_function[state])
 
-        # if sum(self.a_star_state_q_function.values()) > 0.0:self.a_star_state_q_function.values()))
         return dc(self.a_star_state_q_function)
 
 
@@ -259,9 +244,6 @@ class AstarSearch:
 
     def get_current_automaton_states(self, current_automaton_state):
         return self._get_best_states(current_automaton_state)
-    
-    # def get_discovered_state_distance_to_accept(self):
-    #     return dc(self.discovered_state_distance_to_accept)
     
     def get_initial_state(self):
         return self.initial_state
@@ -355,7 +337,6 @@ class AstarSearch:
 
         for l in leaves:
             if l.state == self.automaton.accept_state:
-                # ("DEBUG : leaves contain accept")
                 return True
             
         return False
@@ -370,7 +351,6 @@ class AstarSearch:
 
         for l in leaves:
             if l.state == self.automaton.reject_state:
-                # print("DEBUG : leaves contain reject")
                 return True
             
         return False
