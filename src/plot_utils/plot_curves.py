@@ -60,13 +60,13 @@ def save_reward_plot(agent_id, figure_id, task_id, plot_title, output_filename_b
     plt.figure(figure_id)
     if plot_title is not None:
         if agent_id != None:
-            plt.title(plot_title+"_%d" %agent_id, fontsize=26)
+            plt.title(plot_title+"_%d" %agent_id, fontsize=18)
         else:
-            plt.title(plot_title + "_all_agents", fontsize=26)
-    plt.xlabel("Number of episodes", fontsize=26)
-    plt.ylabel("Average reward", fontsize=26)
-    plt.xticks(fontsize=26)
-    plt.yticks(fontsize=26)
+            plt.title(plot_title + "_all_agents", fontsize=18)
+    plt.xlabel("Number of episodes", fontsize=18)
+    plt.ylabel("Average reward", fontsize=18)
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
     plt.ylim((0, REWARD_IF_GOAL + 0.1))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="lower right")
@@ -79,13 +79,13 @@ def save_steps_plot(agent_id, figure_id, task_id, plot_title, max_steps, output_
     plt.figure(figure_id)
     if plot_title is not None:
         if agent_id != None:
-            plt.title(plot_title+"_%d" %agent_id, fontsize=26)
+            plt.title(plot_title+"_%d" %agent_id, fontsize=18)
         else:
-            plt.title(plot_title + "_all_agents", fontsize=26)
-    plt.xlabel("Number of episodes", fontsize=26)
-    plt.ylabel("Average steps", fontsize=26)
-    plt.xticks(fontsize=26)
-    plt.yticks(fontsize=26)
+            plt.title(plot_title + "_all_agents", fontsize=18)
+    plt.xlabel("Number of episodes", fontsize=18)
+    plt.ylabel("Average steps", fontsize=18)
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
     plt.ylim((0, max_steps + 5))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="upper right")
