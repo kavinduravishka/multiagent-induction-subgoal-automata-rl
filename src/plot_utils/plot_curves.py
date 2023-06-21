@@ -7,11 +7,12 @@ from pandas.errors import EmptyDataError
 from tqdm import tqdm
 
 from reinforcement_learning.isa_base_algorithm import ISAAlgorithmBase
-from utils.utils import read_json_file
+from utils.utils import read_json_file, mkdir
 
 CONFIG_COLOUR_ATTR = "colour"
 CONFIG_FOLDERS_ATTR = "folders"
 CONFIG_LABEL_ATTR = "label"
+
 REWARD_IF_GOAL = 1.0
 
 
@@ -58,11 +59,14 @@ def plot_single_task_curve(figure_id, num_episodes, items, learning_episodes, co
 def save_reward_plot(agent_id, figure_id, task_id, plot_title, output_filename_base, output_path):
     plt.figure(figure_id)
     if plot_title is not None:
-        plt.title(plot_title+"_%d" %agent_id, fontsize=26)
-    plt.xlabel("Number of episodes", fontsize=26)
-    plt.ylabel("Average reward", fontsize=26)
-    plt.xticks(fontsize=26)
-    plt.yticks(fontsize=26)
+        if agent_id != None:
+            plt.title(plot_title+"_%d" %agent_id, fontsize=18)
+        else:
+            plt.title(plot_title + "_all_agents", fontsize=18)
+    plt.xlabel("Number of episodes", fontsize=18)
+    plt.ylabel("Average reward", fontsize=18)
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
     plt.ylim((0, REWARD_IF_GOAL + 0.1))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="lower right")
@@ -74,11 +78,14 @@ def save_reward_plot(agent_id, figure_id, task_id, plot_title, output_filename_b
 def save_steps_plot(agent_id, figure_id, task_id, plot_title, max_steps, output_filename_base, output_path):
     plt.figure(figure_id)
     if plot_title is not None:
-        plt.title(plot_title+"_%d" %agent_id, fontsize=26)
-    plt.xlabel("Number of episodes", fontsize=26)
-    plt.ylabel("Average steps", fontsize=26)
-    plt.xticks(fontsize=26)
-    plt.yticks(fontsize=26)
+        if agent_id != None:
+            plt.title(plot_title+"_%d" %agent_id, fontsize=18)
+        else:
+            plt.title(plot_title + "_all_agents", fontsize=18)
+    plt.xlabel("Number of episodes", fontsize=18)
+    plt.ylabel("Average steps", fontsize=18)
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
     plt.ylim((0, max_steps + 5))
     plt.locator_params(nbins=6)
     plt.legend(fontsize=16, ncol=2, loc="upper right")
@@ -132,7 +139,7 @@ def get_reward_steps_sums_for_setting(agent_id, task_id, setting, max_episode_le
             print("Error: The number of episodes in {} is less than {}. Rewards are set to 0, and steps to the maximum "
                   "episode length.".format(rewards_steps_log_file, num_episodes))
             
-    print("DEBUG : task_rewards, task_steps, task_automaton_learning_episodes :", task_rewards, task_steps, task_automaton_learning_episodes)
+    # print("DEBUG : task_rewards, task_steps, task_automaton_learning_episodes :", task_rewards, task_steps, task_automaton_learning_episodes)
 
     return task_rewards, task_steps, task_automaton_learning_episodes
 
@@ -205,6 +212,33 @@ def create_argparser():
     parser.add_argument("--plot_title", "-t", default=None, help="the title of the plot")
     return parser
 
+def add_dict_arrays(d1:dict,d2:dict):
+    assert d1.keys() == d2.keys()
+
+    new_dict = {}
+
+    for key in d1.keys():
+        new_dict[key] = d1[key] + d2[key]
+
+    return new_dict
+
+def devide_dict_arrays(d:dict, n:int):
+    new_dict = {}
+
+    for key in d.keys():
+        new_dict[key] = d[key]/n
+
+    return new_dict
+
+def union_dict_arrays(d1:dict,d2:dict):
+    assert d1.keys() == d2.keys()
+
+    new_dict = {}
+
+    for key in d1.keys():
+        new_dict[key] = d1[key].union(d2[key])
+
+    return new_dict
 
 if __name__ == "__main__":
     args = create_argparser().parse_args()
@@ -215,6 +249,10 @@ if __name__ == "__main__":
     num_tasks, num_runs, num_episodes, num_agents = args.num_tasks, args.num_runs, args.num_episodes, args.num_agents
     config_obj = read_json_file(args.config)
     output_filename_base, output_path = os.path.basename(args.config)[:-len(".json")], os.path.abspath(os.path.dirname(args.config))
+    mkdir(output_path)
+    all_agents_total_rewards_sum = None
+    all_agents_total_steps_sum = None
+    all_agents_total_automaton_learning_episodes = None
     for agent_id in range(num_agents):
         total_rewards_sum, total_steps_sum, total_automaton_learning_episodes = process_tasks(config_obj, agent_id, num_tasks, num_runs,
                                                                                             num_episodes, args.max_episode_length,
@@ -222,7 +260,34 @@ if __name__ == "__main__":
                                                                                             args.plot_task_curves,
                                                                                             args.window_size, args.plot_title,
                                                                                             output_filename_base, output_path)
-        print("DEBUG :", total_automaton_learning_episodes)
+        
+        # print(total_rewards_sum)
+        # print(total_steps_sum)
+        # print(total_automaton_learning_episodes)
+        try:
+            all_agents_total_rewards_sum = add_dict_arrays(all_agents_total_rewards_sum, total_rewards_sum)
+            all_agents_total_steps_sum = add_dict_arrays(all_agents_total_steps_sum, total_steps_sum)
+            all_agents_total_automaton_learning_episodes = union_dict_arrays(all_agents_total_automaton_learning_episodes, total_automaton_learning_episodes)
+        except AttributeError as e:
+            all_agents_total_rewards_sum = total_rewards_sum
+            all_agents_total_steps_sum = total_steps_sum
+            all_agents_total_automaton_learning_episodes = total_automaton_learning_episodes
+            print(e)
+
+        # all_agents_total_automaton_learning_episodes.union(total_automaton_learning_episodes)
+            # all_agents_total_automaton_learning_episodes = total_automaton_learning_episodes
+        # print("DEBUG :", total_automaton_learning_episodes)
         plot_average_task_curves(config_obj, agent_id, num_tasks, num_runs, args.max_episode_length, args.window_size, args.plot_title,
                                 total_rewards_sum, total_steps_sum, total_automaton_learning_episodes, output_filename_base,
                                 output_path)
+        
+    # print(all_agents_total_rewards_sum)
+    # print(all_agents_total_steps_sum)
+    # print(all_agents_total_automaton_learning_episodes)
+        
+    plot_average_task_curves(config_obj, None, num_tasks, num_runs, args.max_episode_length, args.window_size, args.plot_title,
+                                devide_dict_arrays(all_agents_total_rewards_sum,num_agents) , devide_dict_arrays(all_agents_total_steps_sum, num_agents), 
+                                all_agents_total_automaton_learning_episodes, output_filename_base,
+                                output_path)
+    
+
