@@ -107,10 +107,10 @@ class ISAAlgorithmBase(LearningAlgorithm):
         # set of automata per domain
         self.automata = None
         self.local_automata_queue = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.observed_automaton_queue = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
         self._set_automata(target_automata)
-        # print("target_automata len :",len(target_automata))
-        # print("target_automata [0] len :",len(target_automata[0]))
-        # print("target_automata :",target_automata)
+
+
 
         # sets of examples (goal, deadend and incomplete)
         self.goal_examples = None
@@ -118,9 +118,12 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.inc_examples = None
         self._reset_examples()
 
+        self.last_release_threshold = [0 for _ in range(self.num_agents)]
+        self.released_automatons = [0 for _ in range(self.num_agents)]
+
         # keep track of the number of learnt automata per domain
         self.automaton_counters = np.zeros((self.num_domains,self.num_agents), dtype=np.int)
-        self.automaton_learning_episodes = [[[] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+        self.automaton_learning_episodes = [[[0] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
             utils.rm_dirs(self.get_automaton_task_folders())
@@ -138,6 +141,7 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self._write_automaton_learning_episodes()
 
     def _run_episode(self, domain_id, task_id):
+        # current_release_threshold = self.current_episode//self.automaton_release_frequency + 2
         task = self._get_task(domain_id, task_id)  # get the task to learn
 
         # initialize reward and steps counters, histories and reset the task to its initial state
@@ -168,18 +172,25 @@ class ISAAlgorithmBase(LearningAlgorithm):
                                                                              can_learn_new_automaton)
 
             if any(updated_automaton):  # get the actual initial state as done before
-                current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
+                # current_automaton_state = self._get_initial_automaton_state_successors(domain_id, initial_observations, updated_automaton)
                 current_succeeding_automaton_state = self._get_initial_succeeding_automaton_state_successors(domain_id, initial_observations, updated_automaton)
+
+        if self.interleaved_automaton_learning:
+            changed_current_automatons = self._change_current_automaton_with_next_in_the_queue(domain_id)
+        else:
+            changed_current_automatons = [False for _ in range(self.num_agents)]
+            # print("DEBUG : no current automaton states")
 
         # whether the episode execution must be stopped (an automaton is learnt in the middle)
         interrupt_episode = [False for _ in range(self.num_agents)]
+        # changed_current_automatons = [False for _ in range(self.num_agents)]
 
         automaton_all_agents = self.automata[domain_id]
 
         is_terminal = task.is_terminal()
 
         # while not all(is_terminal) and not any(is_goal_achieved) and episode_length < self.max_episode_length and not any(interrupt_episode):
-        while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode):
+        while not all(is_terminal) and all([episode_length[i] < self.max_episode_length for i in range(self.num_agents)]) and not any(interrupt_episode)  and not any(changed_current_automatons):
 
             current_automaton_state_id = [automaton_all_agents[agent_id].get_state_id(current_automaton_state[agent_id]) 
                                           if is_terminal[agent_id] != None else None for agent_id in range(self.num_agents)]
@@ -210,12 +221,16 @@ class ISAAlgorithmBase(LearningAlgorithm):
 
 
             if not any(interrupt_episode) and self.interleaved_automaton_learning and any(can_learn_new_automaton):
+                # print("DEBUG : performing interleaev atmtn learning :", self.interleaved_automaton_learning)
                 interrupt_episode = self._perform_interleaved_automaton_learning(task, domain_id, next_succeeding_automaton_states,
                                                                                 observation_history,
                                                                                 compressed_observation_history,
                                                                                 can_learn_new_automaton)
 
-            if not any(interrupt_episode):
+            if not any(interrupt_episode) and self.interleaved_automaton_learning:
+                changed_current_automatons = self._change_current_automaton_with_next_in_the_queue(domain_id)
+
+            if not any(interrupt_episode) and not any(changed_current_automatons):
                 automatons = self.automata[domain_id]
                 for agent_id in range(self.num_agents):
                     total_reward[agent_id] += reward[agent_id]
@@ -243,6 +258,26 @@ class ISAAlgorithmBase(LearningAlgorithm):
     def _on_incomplete_episode(self, current_domain_id, agent_id):
         # if the episode was interrupted, log the learning episode
         self.automaton_learning_episodes[current_domain_id][agent_id].append(self.current_episode)
+
+    def _change_current_automaton_with_next_in_the_queue(self, domain_id):
+        current_release_threshold = self.current_episode//self.automaton_release_frequency + 2
+
+        out_all_agents = []
+
+        for agent_id in range(self.num_agents):
+            if len(self.observed_automaton_queue[domain_id][agent_id]) == 0:
+                out_all_agents.append(False)
+            elif current_release_threshold > self.last_release_threshold[agent_id]:
+                if self.last_release_threshold[agent_id] < len(self.observed_automaton_queue[domain_id][agent_id]):
+                    self.automata[domain_id][agent_id] = self.observed_automaton_queue[domain_id][agent_id][self.last_release_threshold[agent_id]]
+                    self.last_release_threshold[agent_id] += 1
+                    self._on_automaton_learned(domain_id, agent_id)
+                    # print("DEBUG : update automatons", agent_id, self.current_episode)
+                    out_all_agents.append(True)
+                else:
+                    out_all_agents.append(False)
+
+        return out_all_agents
 
     @abstractmethod
     def _choose_action(self, domain_id, task_id, current_state, automaton, current_automaton_state):
@@ -493,17 +528,19 @@ class ISAAlgorithmBase(LearningAlgorithm):
                 candidate_automaton.set_reject_state(ISAAlgorithmBase.REJECTING_STATE_NAME)
                 if len(self.local_automata_queue[domain_id][agent_id]) < self.local_auotomata_queue_size + 1:
                     self.local_automata_queue[domain_id][agent_id].append(candidate_automaton)
-                    self.automata[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][0]
+
+                    if len(self.local_automata_queue[domain_id][agent_id]) == 0:
+                        self.observed_automaton_queue[domain_id][agent_id].append(self.local_automata_queue[domain_id][agent_id][0])
                 else:
                     self.local_automata_queue[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][1:]
                     self.local_automata_queue[domain_id][agent_id].append(candidate_automaton)
-                    self.automata[domain_id][agent_id] = self.local_automata_queue[domain_id][agent_id][0]
+                    self.observed_automaton_queue[domain_id][agent_id].append(self.local_automata_queue[domain_id][agent_id][0])
 
                 # plot the new automaton
                 candidate_automaton.plot(self.get_automaton_plot_folder(domain_id, agent_id),
                                          ISAAlgorithmBase.AUTOMATON_PLOT_FILENAME % self.automaton_counters[domain_id][agent_id])
 
-                self._on_automaton_learned(domain_id,agent_id)
+                # self._on_automaton_learned(domain_id,agent_id)
             else:
                 # if the task is UNSATISFIABLE, it means the number of states is not enough to cover the examples, so
                 # the number of states is incremented by 1 and try again
