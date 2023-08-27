@@ -2,6 +2,10 @@
 from abc import abstractmethod
 import numpy as np
 import os
+import warnings
+
+
+
 
 from gym_subgoal_automata_multiagent.utils.subgoal_automaton import SubgoalAutomaton
 from colab_utils.a_star_for_subgoal_automaton import AstarSearch
@@ -160,12 +164,17 @@ class ISAAlgorithmBase(LearningAlgorithm):
         self.collaborative_vote = [[[[] for _ in range(self.num_agents)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
 
         self.last_merged_automatons = [[[None for _ in range(self.num_agents)] for _ in range(self.num_agents)] for _ in range(self.num_domains)]
+
+        self.redering_folders = [os.path.join(self.export_folder_names[domain_id], "render_plots") for domain_id in range(self.num_domains)]
         
         if self.train_model:  # if the tasks are learnt, remove previous folders if they exist
             utils.rm_dirs(self.get_automaton_task_folders())
             utils.rm_dirs(self.get_automaton_solution_folders())
             utils.rm_dirs(self.get_automaton_plot_folders())
             utils.rm_files(self.get_automaton_learning_episodes_files())
+
+        # warnings.filterwarnings("ignore")
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module='pygame')
 
 
     '''
@@ -177,8 +186,12 @@ class ISAAlgorithmBase(LearningAlgorithm):
             self._write_automaton_learning_episodes()
 
     def _run_episode(self, domain_id, task_id):
+        
         current_release_threshold = self.current_episode//self.automaton_release_frequency + 2
         task = self._get_task(domain_id, task_id)  # get the task to learn
+
+        if task_id ==0:
+            task.render(self.redering_folders[domain_id], self.current_episode, task_id, 0)
 
         if self.shared_automata == None:
             self._share_automaton(domain_id,[True for _ in range(self.num_agents)])
@@ -321,6 +334,9 @@ class ISAAlgorithmBase(LearningAlgorithm):
             current_merged_automaton_state = next_merged_automaton_state
             current_succeeding_automaton_state = next_succeeding_automaton_states
             episode_length = [episode_length[i] + 1* (not terminated_agents[i]) for i in range(self.num_agents)]
+
+            if task_id ==0:
+                task.render(self.redering_folders[domain_id], self.current_episode, task_id, max(episode_length))
 
         completed_episode = [not ie for ie in interrupt_episode]
 
